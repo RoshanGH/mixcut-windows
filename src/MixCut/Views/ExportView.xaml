@@ -1,0 +1,189 @@
+<UserControl x:Class="MixCut.Views.ExportView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="White">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="32" MaxWidth="620" HorizontalAlignment="Stretch">
+            <TextBlock Text="导出视频" FontSize="22" FontWeight="Bold" Margin="0,0,0,18" />
+
+            <!-- 概览 -->
+            <TextBlock Text="导出概览" FontSize="12" FontWeight="SemiBold"
+                       Foreground="#666" Margin="0,0,0,8" />
+            <Border x:Name="OverviewPanel" Background="#F5F5F7" CornerRadius="10"
+                    Padding="16,14" Margin="0,0,0,20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                        <TextBlock x:Name="StrategyCountText" FontSize="20" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="策略" FontSize="10" Foreground="#999"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                    <Border Grid.Column="1" Width="1" Background="#DDD" />
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <TextBlock x:Name="SchemeCountText" FontSize="20" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="视频" FontSize="10" Foreground="#999"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                    <Border Grid.Column="3" Width="1" Background="#DDD" />
+                    <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                        <TextBlock x:Name="TotalDurationText" FontSize="20" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="总时长" FontSize="10" Foreground="#999"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                    <Border Grid.Column="5" Width="1" Background="#DDD" />
+                    <StackPanel Grid.Column="6" HorizontalAlignment="Center">
+                        <TextBlock x:Name="EstimatedSizeText" FontSize="20" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="预估大小" FontSize="10" Foreground="#999"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border x:Name="NoSchemeHint" Background="#FFF5E0" BorderBrush="#FFD080"
+                    BorderThickness="1" CornerRadius="8" Padding="12,8"
+                    Margin="0,0,0,16" Visibility="Collapsed">
+                <TextBlock Text="⚠ 暂无可导出的方案，请先在「混剪方案」页面生成方案"
+                           FontSize="12" Foreground="#7A5800" />
+            </Border>
+
+            <!-- 设置 -->
+            <TextBlock Text="导出设置" FontSize="12" FontWeight="SemiBold"
+                       Foreground="#666" Margin="0,0,0,8" />
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                    <TextBlock Text="分辨率" FontSize="11" Foreground="#666" Margin="0,0,0,4" />
+                    <ComboBox x:Name="ResolutionCombo" Padding="6,4"
+                              SelectionChanged="OnConfigChanged" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Margin="6,0">
+                    <TextBlock Text="编码器" FontSize="11" Foreground="#666" Margin="0,0,0,4" />
+                    <ComboBox x:Name="CodecCombo" Padding="6,4"
+                              SelectionChanged="OnConfigChanged" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Margin="6,0,0,0">
+                    <TextBlock Text="质量" FontSize="11" Foreground="#666" Margin="0,0,0,4" />
+                    <ComboBox x:Name="QualityCombo" Padding="6,4"
+                              SelectionChanged="OnConfigChanged" />
+                </StackPanel>
+            </Grid>
+
+            <!-- 质量提示：码率/CRF + 30 秒文件大小估算（对齐 macOS ExportView） -->
+            <TextBlock x:Name="QualityHintText" FontSize="10" Foreground="#888"
+                       Margin="0,0,0,4" />
+            <!-- 硬件加速状态：显示选中的硬件编码器（NVIDIA / Intel / AMD / MF / 无） -->
+            <TextBlock x:Name="HardwareStatusText" FontSize="10" Foreground="#2E8B57"
+                       Margin="0,0,0,18" />
+
+            <Border Height="1" Background="#EEE" Margin="0,0,0,16" />
+
+            <!-- 单方案导出 -->
+            <TextBlock Text="导出单个方案" FontSize="12" FontWeight="SemiBold"
+                       Foreground="#666" Margin="0,0,0,8" />
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="SchemeCombo" Padding="6,4" />
+                <Button Grid.Column="1" x:Name="ExportSingleButton"
+                        Content="⬆  导出为 MP4" Padding="14,6" Margin="10,0,0,0"
+                        Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                        Cursor="Hand" Click="OnExportSingleClick" />
+            </Grid>
+
+            <Border Height="1" Background="#EEE" Margin="0,12,0,16" />
+
+            <!-- 批量导出 -->
+            <TextBlock Text="批量导出全部方案" FontSize="12" FontWeight="SemiBold"
+                       Foreground="#666" Margin="0,0,0,8" />
+            <Button x:Name="ExportAllButton" Content="📦  全部导出到文件夹"
+                    Padding="14,8" HorizontalAlignment="Left"
+                    Background="#9333EA" Foreground="White" BorderThickness="0"
+                    Cursor="Hand" Click="OnExportAllClick" />
+
+            <!-- 进度 -->
+            <StackPanel x:Name="ProgressSection" Visibility="Collapsed" Margin="0,18,0,0">
+                <TextBlock x:Name="ProgressTitle" FontSize="12" FontWeight="SemiBold" />
+                <TextBlock x:Name="ProgressStatusText" FontSize="11" Foreground="#666"
+                           Margin="0,4,0,4" />
+                <ProgressBar x:Name="ProgressBar" Height="6" Maximum="1" />
+                <TextBlock x:Name="ProgressDetailText" FontSize="10" Foreground="#999"
+                           Margin="0,6,0,0" />
+            </StackPanel>
+
+            <!-- 完成提示（绿色大对勾 + 标题 + 详情 + 打开按钮，对齐 Mac SuccessPanel） -->
+            <Border x:Name="CompletePanel" Background="#E2F5E8" BorderBrush="#A6E0BC"
+                    BorderThickness="1" CornerRadius="10" Padding="18,14"
+                    Margin="0,16,0,0" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Width="44" Height="44"
+                            Background="#2E8B57" CornerRadius="999"
+                            Margin="0,0,14,0" VerticalAlignment="Top">
+                        <TextBlock Text="✓" Foreground="White" FontSize="22"
+                                   FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="导出成功" FontSize="14" FontWeight="Bold"
+                                   Foreground="#1E6E3F" />
+                        <TextBlock x:Name="CompleteText" FontSize="12"
+                                   Foreground="#1E6E3F" TextWrapping="Wrap"
+                                   Margin="0,3,0,0" />
+                        <Button x:Name="OpenFolderButton" Content="📂 打开输出文件夹"
+                                Padding="10,5" Margin="0,10,0,0" HorizontalAlignment="Left"
+                                Background="White" BorderBrush="#A6E0BC" BorderThickness="1"
+                                Foreground="#1E6E3F" FontSize="11" FontWeight="SemiBold"
+                                Cursor="Hand"
+                                Click="OnOpenOutputFolder" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- 错误面板（红色 ✕ + 标题 + 详情，对齐 Mac ErrorPanel） -->
+            <Border x:Name="ErrorPanel" Background="#FDE2E2" BorderBrush="#F5B7B7"
+                    BorderThickness="1" CornerRadius="10" Padding="18,14"
+                    Margin="0,16,0,0" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Width="44" Height="44"
+                            Background="#D33A3A" CornerRadius="999"
+                            Margin="0,0,14,0" VerticalAlignment="Top">
+                        <TextBlock Text="✕" Foreground="White" FontSize="22"
+                                   FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="导出失败" FontSize="14" FontWeight="Bold"
+                                   Foreground="#A12626" />
+                        <TextBlock x:Name="ErrorText" FontSize="12" Foreground="#A12626"
+                                   TextWrapping="Wrap" Margin="0,3,0,0" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

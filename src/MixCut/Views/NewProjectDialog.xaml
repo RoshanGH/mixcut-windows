@@ -1,0 +1,34 @@
+<Window x:Class="MixCut.Views.NewProjectDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="新建项目"
+        Icon="/Resources/AppIcon.ico" SizeToContent="Height" Width="400"
+        MinHeight="240"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="White">
+    <StackPanel Margin="28">
+        <!-- 标题区（对齐 macOS NewProjectSheet：film.stack.fill 图标 + "新建项目" 标题） -->
+        <TextBlock Text="🎬" FontSize="24" HorizontalAlignment="Center"
+                   Foreground="#1D6BE5" Margin="0,0,0,4" />
+        <TextBlock Text="新建项目" FontSize="16" FontWeight="SemiBold"
+                   HorizontalAlignment="Center" Margin="0,0,0,20" />
+        <TextBlock Text="项目名称" FontSize="12" Foreground="#666" Margin="0,0,0,6" />
+        <Grid>
+            <TextBox x:Name="NameBox" Padding="6,5" FontSize="13"
+                     TextChanged="OnNameChanged" />
+            <!-- 灰色 placeholder（WPF TextBox 无原生 placeholder，用 TextBlock 叠加 + 监听文本可见性切换） -->
+            <TextBlock x:Name="NamePlaceholder" Text="输入项目名称（例如：康王视频混剪）"
+                       Foreground="#BBB" FontSize="13"
+                       Margin="9,7,0,0" IsHitTestVisible="False"
+                       VerticalAlignment="Top" HorizontalAlignment="Left" />
+        </Grid>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+            <Button Content="取消" Padding="18,7" Margin="0,0,10,0"
+                    IsCancel="True" Click="OnCancel" />
+            <!-- 名称为空时实时 disabled，对齐 Mac 行为；不再用 MessageBox 报错 -->
+            <Button x:Name="CreateButton" Content="+  创建" Padding="18,7"
+                    IsDefault="True" Background="#1D6BE5" Foreground="White"
+                    BorderThickness="0" Click="OnCreate" IsEnabled="False" />
+        </StackPanel>
+    </StackPanel>
+</Window>

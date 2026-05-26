@@ -1,0 +1,39 @@
+# 构建产物
+bin/
+obj/
+artifacts/
+*.user
+
+# Visual Studio
+.vs/
+
+# 发布产物
+publish/
+*.msi
+*.exe
+
+# 本地配置
+*.local.json
+
+# Secrets
+.env
+.env.*
+*.key
+*.pfx
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.idea/
+*.suo
+*.vsidx
+
+# 内置二进制（从 ffmpeg/whisper 官方分发拷入，不入库）
+src/MixCut/Resources/bin/
+
+# Claude / 工具产物
+.claude/
+docs/superpowers/specs/*.draft.md

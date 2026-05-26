@@ -1,0 +1,171 @@
+<Window x:Class="MixCut.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="设置"
+        Icon="/Resources/AppIcon.ico" Width="560" Height="580"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="White">
+    <DockPanel Margin="20">
+        <!-- 底部按钮 -->
+        <Border DockPanel.Dock="Bottom" BorderBrush="#E5E5E7" BorderThickness="0,1,0,0"
+                Margin="0,12,0,0" Padding="0,12,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="关闭" Padding="18,7" IsCancel="True"
+                        Background="White" BorderBrush="#CCC" />
+            </StackPanel>
+        </Border>
+
+        <TabControl Padding="0" BorderThickness="0" Background="White">
+            <!-- API -->
+            <TabItem Header="API">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,14">
+                    <StackPanel>
+                        <TextBlock Text="AI 提供商" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,8" />
+                        <ComboBox x:Name="ProviderCombo" Padding="6,5" Margin="0,0,0,18"
+                                  SelectionChanged="OnProviderChanged" />
+
+                        <TextBlock x:Name="SectionHeader" Text="提供商配置"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,10" />
+
+                        <TextBlock Text="API Key" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" x:Name="ApiKeyBox" Padding="6,5"
+                                     FontFamily="Consolas, Cascadia Mono, monospace" />
+                            <Button Grid.Column="1" x:Name="ToggleVisibilityButton"
+                                    Width="32" Margin="6,0,0,0" Click="OnToggleVisibility"
+                                    Background="White" BorderBrush="#CCC"
+                                    ToolTip="显示/隐藏 API Key">
+                                <TextBlock x:Name="EyeIcon" Text="👁" FontSize="13" />
+                            </Button>
+                        </Grid>
+
+                        <StackPanel x:Name="RelayPanel" Visibility="Collapsed">
+                            <TextBlock Text="转发网关地址" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                            <TextBox x:Name="RelayUrlBox" Padding="6,5" Margin="0,0,0,4"
+                                     FontFamily="Consolas, Cascadia Mono, monospace" />
+                            <TextBlock Text="要求兼容 OpenAI 协议的转发网关地址"
+                                       FontSize="10" Foreground="#999" Margin="0,0,0,12" />
+
+                            <TextBlock Text="网关平台" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                            <ComboBox x:Name="RelayPlatformCombo" Padding="6,5" Margin="0,0,0,14"
+                                      SelectionChanged="OnRelayPlatformChanged" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="CustomPanel" Visibility="Collapsed">
+                            <TextBlock Text="API 地址" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                            <TextBox x:Name="CustomUrlBox" Padding="6,5" Margin="0,0,0,12"
+                                     FontFamily="Consolas, Cascadia Mono, monospace" />
+                            <TextBlock Text="模型名称" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                            <TextBox x:Name="CustomModelBox" Padding="6,5" Margin="0,0,0,14"
+                                     FontFamily="Consolas, Cascadia Mono, monospace" />
+                        </StackPanel>
+
+                        <TextBlock Text="模型" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+                        <ComboBox x:Name="ModelCombo" Padding="6,5" IsEditable="True"
+                                  Margin="0,0,0,4"
+                                  SelectionChanged="OnModelComboSelectionChanged" />
+                        <TextBlock x:Name="ModelHelpText" FontSize="10" Foreground="#888"
+                                   Margin="0,0,0,12" Visibility="Collapsed" />
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="SavedBadge" Text="✓ 已保存"
+                                       FontSize="11" Foreground="#2E8B57" VerticalAlignment="Center"
+                                       Visibility="Collapsed" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                        Margin="0,0,0,0">
+                                <Button x:Name="ClearKeyButton" Content="清除"
+                                        Padding="14,5" Margin="8,0,0,0"
+                                        Background="White" BorderBrush="#D33" Foreground="#D33"
+                                        Click="OnClearKey" Visibility="Collapsed" />
+                                <Button x:Name="SaveKeyButton" Content="保存"
+                                        Padding="14,5" Margin="8,0,0,0"
+                                        Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                                        Click="OnSaveKey" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <!-- 占位让左侧 SavedBadge 不挤到边 -->
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 通用 -->
+            <TabItem Header="通用">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,14">
+                    <StackPanel x:Name="GeneralPanel">
+                        <!-- 视频处理 -->
+                        <TextBlock Text="视频处理" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,10" />
+                        <Grid x:Name="DependencyGrid" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                        </Grid>
+
+                        <!-- Whisper 模型下载状态 -->
+                        <Border x:Name="ModelDownloadBox" Background="#FFF8E1"
+                                BorderBrush="#FFD080" BorderThickness="1" CornerRadius="6"
+                                Padding="12,8" Margin="0,4,0,16" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="ModelStatusText" FontSize="12"
+                                           Foreground="#7A5800" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ProgressBar Grid.Column="0" x:Name="ModelProgress"
+                                                 Height="6" Maximum="1" />
+                                    <Button Grid.Column="1" x:Name="CancelDownloadButton"
+                                            Content="✕ 取消" Padding="10,4"
+                                            Margin="10,0,0,0" Click="OnCancelDownload"
+                                            Background="White" BorderBrush="#CCC"
+                                            FontSize="11" Cursor="Hand"
+                                            Visibility="Collapsed" />
+                                    <Button Grid.Column="2" x:Name="DownloadModelButton"
+                                            Content="下载模型 (~1.6GB)" Padding="12,4"
+                                            Margin="10,0,0,0" Click="OnDownloadModel"
+                                            Background="#F0AD4E" Foreground="White" BorderThickness="0" />
+                                </Grid>
+                                <!-- 实时速度（仅下载中显示） -->
+                                <TextBlock x:Name="ModelSpeedText" FontSize="10" Foreground="#7A5800"
+                                           Margin="0,4,0,0" FontFamily="Consolas, monospace"
+                                           Visibility="Collapsed" />
+                                <TextBlock x:Name="ModelErrorText" FontSize="11" Foreground="#D33"
+                                           Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 存储 -->
+                        <TextBlock Text="存储" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,8,0,10" />
+                        <StackPanel x:Name="PathPanel" Margin="0,0,0,8" />
+                        <Button x:Name="OpenDataDirButton" Content="📂  在资源管理器中打开"
+                                Padding="12,5" Margin="0,4,0,16" HorizontalAlignment="Left"
+                                Background="White" BorderBrush="#CCC"
+                                Click="OnOpenDataDir" />
+
+                        <!-- 系统信息 -->
+                        <TextBlock Text="系统信息" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,8,0,10" />
+                        <StackPanel x:Name="SystemInfoPanel" Margin="0,0,0,16" />
+
+                        <!-- 关于 -->
+                        <TextBlock Text="关于" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,8,0,10" />
+                        <StackPanel x:Name="AboutPanel" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

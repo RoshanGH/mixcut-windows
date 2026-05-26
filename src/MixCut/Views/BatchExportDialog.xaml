@@ -1,0 +1,180 @@
+<Window x:Class="MixCut.Views.BatchExportDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="批量导出分镜"
+        Icon="/Resources/AppIcon.ico" Width="560" MinHeight="420"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="White">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="1" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="1" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 标题 -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="⬆" FontSize="18" Foreground="#1D6BE5"
+                       Margin="0,0,8,0" VerticalAlignment="Center" />
+            <TextBlock x:Name="TitleText" Text="批量导出分镜"
+                       FontSize="15" FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="#EEE" />
+
+        <!-- 主内容 -->
+        <Grid Grid.Row="2" Margin="0,12">
+            <!-- 配置态 -->
+            <StackPanel x:Name="ConfigPanel">
+                <TextBlock Text="输出目录" FontSize="11" FontWeight="SemiBold"
+                           Foreground="#888" Margin="0,0,0,4" />
+                <Border Background="#F2F2F4" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" x:Name="OutputDirText"
+                                   Text="未选择" FontSize="11"
+                                   FontFamily="Consolas" Foreground="#888"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="选择…" Padding="14,3" Margin="8,0,0,0"
+                                Background="White" BorderBrush="#CCC"
+                                Click="OnPickDirectory" />
+                    </Grid>
+                </Border>
+
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="FileListLabel" Text="文件列表" FontSize="11"
+                               FontWeight="SemiBold" Foreground="#888" />
+                    <TextBlock Grid.Column="1" x:Name="TotalDurationText"
+                               FontSize="10" FontFamily="Consolas" Foreground="#AAA" />
+                </Grid>
+                <Border Background="#FAFAFC" CornerRadius="6" Padding="6" MaxHeight="200">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="FileListItems">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="14" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="🎞" FontSize="10" Foreground="#AAA"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding FileName}"
+                                                   FontSize="11" FontFamily="Consolas"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Margin="4,0" />
+                                        <TextBlock Grid.Column="2" Text="{Binding DurationText}"
+                                                   FontSize="10" FontFamily="Consolas"
+                                                   Foreground="#AAA" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="⚡" FontSize="11" Foreground="#E67E22" />
+                    <TextBlock Text="trim+setpts 精确切片：每段从关键帧开始，无开头黑屏"
+                               FontSize="10" Foreground="#888" Margin="4,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- 进度态 -->
+            <StackPanel x:Name="ProgressPanel" Visibility="Collapsed">
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="ProgressCountText" FontSize="12" FontWeight="Medium" />
+                    <TextBlock Grid.Column="1" x:Name="ProgressPctText" FontSize="12"
+                               FontWeight="SemiBold" Foreground="#1D6BE5" />
+                </Grid>
+                <ProgressBar x:Name="ProgressBar" Height="6" Maximum="1" />
+                <TextBlock x:Name="CurrentItemText" FontSize="11" FontFamily="Consolas"
+                           Foreground="#666" Margin="0,10,0,0"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="CurrentSubText" FontSize="10" Foreground="#888"
+                           Margin="0,2,0,0" />
+                <TextBlock x:Name="FailedCountText" FontSize="11" Foreground="#C06F00"
+                           Margin="0,8,0,0" Visibility="Collapsed" />
+            </StackPanel>
+
+            <!-- 完成态 -->
+            <StackPanel x:Name="ResultPanel" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <TextBlock x:Name="ResultIconText" FontSize="28" Margin="0,0,10,0"
+                               VerticalAlignment="Center" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="ResultTitleText" FontSize="14" FontWeight="SemiBold" />
+                        <TextBlock x:Name="ResultSummaryText" FontSize="11" Foreground="#888"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock x:Name="ResultPathText" FontSize="10" FontFamily="Consolas"
+                           Foreground="#AAA" TextTrimming="CharacterEllipsis" />
+                <Border x:Name="FailedListBox" Background="#FFF5F5" CornerRadius="6"
+                        Padding="8" Margin="0,8,0,0" MaxHeight="120"
+                        Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="FailedItems">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Name}" FontSize="10"
+                                                   FontFamily="Consolas"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Error}"
+                                                   FontSize="10" Foreground="#888"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Margin="8,0,0,0" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="3" Background="#EEE" />
+
+        <!-- 底部按钮 -->
+        <Grid Grid.Row="4" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" x:Name="OpenFolderButton" Content="📂 打开输出目录"
+                    Padding="12,5" Background="White" BorderBrush="#CCC"
+                    Click="OnOpenOutputFolder" Visibility="Collapsed" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="CancelButton" Content="取消" Padding="14,5" Margin="0,0,8,0"
+                        Background="White" BorderBrush="#CCC"
+                        Click="OnCancel" />
+                <Button x:Name="PrimaryButton" Content="开始导出" Padding="16,5"
+                        Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                        IsDefault="True" Click="OnPrimary" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

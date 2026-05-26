@@ -1,0 +1,477 @@
+<UserControl x:Class="MixCut.Views.SegmentLibraryViewV2"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:cards="clr-namespace:MixCut.ViewModels.Cards"
+             xmlns:comp="clr-namespace:MixCut.Views.Components"
+             xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             mc:Ignorable="d"
+             Background="{StaticResource BgPrimaryBrush}">
+    <UserControl.Resources>
+        <sys:Double x:Key="SegmentCardWidth">210</sys:Double>
+        <sys:Double x:Key="SegmentCardHeight">500</sys:Double>
+        <sys:Double x:Key="SegmentCardThumbWidth">194</sys:Double>
+        <sys:Double x:Key="SegmentCardThumbHeight">270</sys:Double>
+    </UserControl.Resources>
+
+    <DockPanel Margin="20,16,16,16">
+
+        <!-- ========== 顶部工具栏 ========== -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="{StaticResource BgQuaternaryBrush}"
+                        CornerRadius="{StaticResource CornerRadiusMd}" Padding="8,4">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="🔍" FontSize="12"
+                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                   VerticalAlignment="Center" Margin="2,0,6,0" />
+                        <TextBox Grid.Column="1" x:Name="SearchBox"
+                                 BorderThickness="0" Background="Transparent"
+                                 VerticalAlignment="Center" FontSize="12"
+                                 TextChanged="OnSearchChanged" />
+                        <Button Grid.Column="2" x:Name="ClearSearchButton" Content="✕"
+                                Background="Transparent" BorderThickness="0"
+                                Foreground="{StaticResource TextQuaternaryBrush}"
+                                Padding="4,0" Cursor="Hand" Visibility="Collapsed"
+                                Click="OnClearSearch" />
+                    </Grid>
+                </Border>
+
+                <ComboBox Grid.Column="1" x:Name="ViewModeCombo" Width="86" Margin="8,0,0,0"
+                          Padding="6,4" SelectionChanged="OnViewModeChanged">
+                    <ComboBoxItem Content="网格" IsSelected="True" />
+                    <ComboBoxItem Content="列表" />
+                </ComboBox>
+
+                <ComboBox Grid.Column="2" x:Name="SortCombo" Width="96" Margin="8,0,0,0"
+                          Padding="6,4" SelectionChanged="OnSortChanged">
+                    <ComboBoxItem Content="按时间" IsSelected="True" />
+                    <ComboBoxItem Content="按质量" />
+                </ComboBox>
+            </Grid>
+
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                          Margin="0,0,0,6">
+                <ItemsControl x:Name="TypeChipList">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <Grid Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" x:Name="StatsText" FontSize="11"
+                           Foreground="{StaticResource TextTertiaryBrush}"
+                           VerticalAlignment="Center" />
+                <Button Grid.Column="1" x:Name="ResetButton" Content="✕  重置筛选"
+                        Background="{StaticResource BgTertiaryBrush}"
+                        Foreground="{StaticResource TextTertiaryBrush}"
+                        BorderThickness="0" Padding="8,3" Margin="0,0,8,0"
+                        FontSize="11" Cursor="Hand"
+                        Click="OnResetFilter" Visibility="Collapsed" />
+                <Button Grid.Column="2" x:Name="SelectionModeButton" Content="☑ 多选"
+                        Background="White"
+                        BorderBrush="{StaticResource BorderHoverBrush}"
+                        BorderThickness="1" Padding="10,3"
+                        FontSize="11" Cursor="Hand"
+                        Click="OnToggleSelectionMode" />
+            </Grid>
+
+            <Border x:Name="SelectionToolbar" Background="{StaticResource AccentBlueLightBrush}"
+                    CornerRadius="6" Padding="10,6" Margin="0,8,0,0" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" x:Name="SelectionCountText" Text="已选 0"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBlueBrush}"
+                               VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="全选" Click="OnSelectAll"
+                                Background="White" BorderBrush="{StaticResource BorderHoverBrush}"
+                                BorderThickness="1" Padding="9,3" Margin="0,0,4,0"
+                                FontSize="11" Cursor="Hand" />
+                        <Button Content="反选" Click="OnInvertSelection"
+                                Background="White" BorderBrush="{StaticResource BorderHoverBrush}"
+                                BorderThickness="1" Padding="9,3" Margin="0,0,4,0"
+                                FontSize="11" Cursor="Hand" />
+                        <Button Content="清空" Click="OnClearSelection"
+                                Background="White" BorderBrush="{StaticResource BorderHoverBrush}"
+                                BorderThickness="1" Padding="9,3" Margin="0,0,12,0"
+                                FontSize="11" Cursor="Hand" />
+                        <Button x:Name="BatchExportButton" Content="⬆ 批量导出"
+                                Background="{StaticResource AccentBlueBrush}"
+                                Foreground="White" BorderThickness="0"
+                                Padding="12,3" Margin="0,0,4,0"
+                                FontSize="11" Cursor="Hand"
+                                Click="OnBatchExport" IsEnabled="False" />
+                        <Button x:Name="BatchDeleteButton" Content="🗑 批量删除"
+                                Background="White"
+                                BorderBrush="{StaticResource DangerRedBrush}"
+                                Foreground="{StaticResource DangerRedBrush}"
+                                BorderThickness="1" Padding="12,3"
+                                FontSize="11" Cursor="Hand"
+                                Click="OnBatchDelete" IsEnabled="False" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </StackPanel>
+
+        <Border DockPanel.Dock="Top" Height="1"
+                Background="{StaticResource BorderSubtleBrush}" Margin="0,4,0,8" />
+
+        <!-- ========== 主体：VirtualizingWrapPanel 真虚拟化（视口外不实例化） ========== -->
+        <Grid>
+            <StackPanel x:Name="EmptyState" Visibility="Collapsed"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="🎬" FontSize="40"
+                           Foreground="{StaticResource TextDisabledBrush}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="没有符合条件的分镜" FontSize="13"
+                           Foreground="{StaticResource TextTertiaryBrush}"
+                           HorizontalAlignment="Center" Margin="0,8,0,4" />
+            </StackPanel>
+
+            <!-- 外层：按视频分组（对齐 Mac 版）。每组 = 视频 header + 该组分镜 WrapPanel -->
+            <ScrollViewer x:Name="GroupsScroller"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="GroupsHost" ItemsSource="{Binding Groups}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type cards:VideoGroupViewModel}">
+                            <StackPanel Margin="0,0,0,18">
+                                <!-- 视频 header：缩略图 + 名称 + 分镜数 -->
+                                <Border Margin="0,0,0,10" Padding="8,6"
+                                        Background="{StaticResource BgSubtleBrush}"
+                                        CornerRadius="8">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="40" Height="40" CornerRadius="6"
+                                                ClipToBounds="True" Background="Black"
+                                                Margin="0,0,10,0">
+                                            <Image Source="{Binding ThumbnailImage}"
+                                                   Stretch="UniformToFill" />
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding VideoName}"
+                                                       FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" MaxWidth="700" />
+                                            <TextBlock Text="{Binding MetaText}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource TextTertiaryBrush}"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <!-- 该组分镜卡片：WrapPanel 排列（每组小规模，不需要 VirtualizingWrapPanel） -->
+                                <ItemsControl ItemsSource="{Binding Segments}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerStyle>
+                                        <Style TargetType="ContentPresenter">
+                                            <Setter Property="Margin" Value="0,0,10,10" />
+                                        </Style>
+                                    </ItemsControl.ItemContainerStyle>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type cards:SegmentCardViewModel}">
+                        <Border x:Name="CardRoot"
+                                Width="{StaticResource SegmentCardWidth}"
+                                Height="{StaticResource SegmentCardHeight}"
+                                Background="White"
+                                BorderBrush="{StaticResource BorderPrimaryBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10" Padding="8"
+                                Cursor="Hand"
+                                ClipToBounds="True"
+                                Tag="{Binding}"
+                                MouseLeftButtonDown="OnCardClicked"
+                                MouseEnter="OnCardMouseEnter"
+                                MouseLeave="OnCardMouseLeave">
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="📋 复制台词"
+                                              Command="{Binding PlacementTarget.Tag.CopyTranscriptCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <MenuItem Header="📂 在 Explorer 中显示原视频"
+                                              Command="{Binding PlacementTarget.Tag.ShowInExplorerCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <Separator />
+                                    <MenuItem Header="🗑 删除分镜"
+                                              Command="{Binding PlacementTarget.Tag.DeleteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                </ContextMenu>
+                            </Border.ContextMenu>
+
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource AccentBlueAlpha10Brush}" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBlueBrush}" />
+                                            <Setter Property="BorderThickness" Value="1.5" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsChecked}" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource AccentBlueAlpha20Brush}" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBlueBrush}" />
+                                            <Setter Property="BorderThickness" Value="2" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />  <!-- 缩略图 -->
+                                    <RowDefinition Height="Auto" />  <!-- 标签 -->
+                                    <RowDefinition Height="Auto" />  <!-- 位置/质量 -->
+                                    <RowDefinition Height="*" />     <!-- 台词（占剩余，超出滚动） -->
+                                    <RowDefinition Height="Auto" />  <!-- 边界微调 -->
+                                </Grid.RowDefinitions>
+                                <!-- 缩略图区 -->
+                                <Border Grid.Row="0"
+                                        Width="{StaticResource SegmentCardThumbWidth}"
+                                        Height="{StaticResource SegmentCardThumbHeight}"
+                                        Background="Black"
+                                        CornerRadius="6" ClipToBounds="True">
+                                    <Grid x:Name="ThumbGrid">
+                                        <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
+                                        <ContentControl x:Name="VideoHost" />
+
+                                        <!-- 编号徽章（左上） -->
+                                        <Border Background="#C01D6BE5" CornerRadius="4"
+                                                Padding="5,1"
+                                                HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                Margin="6,6,0,0">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SequenceNumber}" Value="0">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Foreground="White" FontSize="10" FontWeight="Bold"
+                                                       FontFamily="{StaticResource FontFamilyMono}">
+                                                <Run Text="#" /><Run Text="{Binding SequenceNumber, Mode=OneWay}" />
+                                            </TextBlock>
+                                        </Border>
+
+                                        <!-- 时长 badge（右下，走 binding 自动联动） -->
+                                        <Border Background="#A0000000" CornerRadius="4"
+                                                Padding="6,1"
+                                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                                Margin="0,0,6,6">
+                                            <TextBlock Text="{Binding DurationDisplay}"
+                                                       Foreground="White" FontSize="10"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+
+                                        <!-- 多选标记（右上） -->
+                                        <Border Width="24" Height="24"
+                                                BorderBrush="#C01D6BE5" BorderThickness="2"
+                                                CornerRadius="999"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                Margin="0,6,6,0"
+                                                Visibility="{Binding IsSelectionMode, Converter={StaticResource BoolToVisibility}}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#A0FFFFFF" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsChecked}" Value="True">
+                                                            <Setter Property="Background" Value="{StaticResource AccentBlueBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="✓" Foreground="White"
+                                                       FontSize="14" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Visibility="{Binding IsChecked, Converter={StaticResource BoolToVisibility}}" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 标签 + 位置 + 质量分 -->
+                                <ItemsControl Grid.Row="1" ItemsSource="{Binding SemanticTypes}" Margin="0,6,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border CornerRadius="999" Padding="7,2" Margin="0,0,4,4"
+                                                    Background="{Binding ., Converter={StaticResource SemanticTypeToTintBrush}}">
+                                                <TextBlock Text="{Binding ., Converter={StaticResource SemanticTypeToLabel}}"
+                                                           FontSize="10" FontWeight="SemiBold"
+                                                           Foreground="{Binding ., Converter={StaticResource SemanticTypeToBrush}}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <WrapPanel Grid.Row="2">
+                                    <Border CornerRadius="999" Padding="7,2" Margin="0,0,4,4"
+                                            Background="#15888888">
+                                        <TextBlock Text="{Binding PositionType, Converter={StaticResource PositionTypeToLabel}}"
+                                                   FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextTertiaryBrush}" />
+                                    </Border>
+                                    <Border CornerRadius="999" Padding="7,2" Margin="0,0,4,4"
+                                            Background="#152E8B57">
+                                        <TextBlock FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{Binding QualityScore, Converter={StaticResource QualityScoreToBrush}}">
+                                            <Run Text="★ " /><Run Text="{Binding QualityScore, Mode=OneWay, StringFormat={}{0:F1}}" />
+                                        </TextBlock>
+                                    </Border>
+                                </WrapPanel>
+
+                                <!-- 台词块（占 Row="*" 剩余空间，超出自动滚动） -->
+                                <Border Grid.Row="3"
+                                        Background="{StaticResource BgSubtleBrush}"
+                                        BorderBrush="{StaticResource BorderSubtleBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6" Padding="7,5" Margin="0,6,0,0">
+                                    <Grid>
+                                        <!-- 有台词：标题行 + ScrollViewer 自动占剩余 -->
+                                        <DockPanel Visibility="{Binding HasTranscript, Converter={StaticResource BoolToVisibility}}">
+                                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,3">
+                                                <TextBlock Text="💬" FontSize="9"
+                                                           VerticalAlignment="Center" Margin="0,0,4,0" />
+                                                <TextBlock Text="台词" FontSize="10" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextTertiaryBrush}"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock FontSize="9"
+                                                           FontFamily="{StaticResource FontFamilyMono}"
+                                                           Foreground="{StaticResource TextQuaternaryBrush}"
+                                                           VerticalAlignment="Center" Margin="2,0,0,0">
+                                                    <Run Text=" · " /><Run Text="{Binding TranscriptCharCount, Mode=OneWay}" /><Run Text="字" />
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                          HorizontalScrollBarVisibility="Disabled">
+                                                <TextBlock Text="{Binding TranscriptText}"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           LineHeight="16"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                            </ScrollViewer>
+                                        </DockPanel>
+                                        <!-- 无台词：居中提示 -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{Binding HasTranscript, Converter={StaticResource BoolToVisibilityInverse}}">
+                                            <TextBlock Text="🔇" FontSize="11"
+                                                       Foreground="{StaticResource TextQuinaryBrush}"
+                                                       Margin="0,0,4,0" />
+                                            <TextBlock Text="暂无台词" FontSize="10"
+                                                       Foreground="{StaticResource TextQuaternaryBrush}"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 边界微调（Grid.Row=4 锁定在卡片底部，台词再长也不会挤掉） -->
+                                <Grid Grid.Row="4" Height="24" Margin="0,4,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="−"
+                                                Background="{StaticResource BgQuaternaryBrush}"
+                                                Foreground="{StaticResource TextTertiaryBrush}"
+                                                BorderThickness="0"
+                                                Width="18" Height="18" Padding="0" FontSize="10"
+                                                Cursor="Hand"
+                                                Command="{Binding AdjustStartCommand}"
+                                                CommandParameter="-0.1" />
+                                        <TextBox Width="36" Height="18" FontSize="9"
+                                                 FontFamily="{StaticResource FontFamilyMono}"
+                                                 TextAlignment="Center"
+                                                 VerticalContentAlignment="Center"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Margin="2,0,2,0"
+                                                 Text="{Binding StartTime, Mode=OneWay, StringFormat={}{0:F1}}"
+                                                 LostKeyboardFocus="OnStartLostFocus"
+                                                 KeyDown="OnStartKeyDown"
+                                                 Tag="{Binding}" />
+                                        <Button Content="+"
+                                                Background="{StaticResource BgQuaternaryBrush}"
+                                                Foreground="{StaticResource TextTertiaryBrush}"
+                                                BorderThickness="0"
+                                                Width="18" Height="18" Padding="0" FontSize="10"
+                                                Cursor="Hand"
+                                                Command="{Binding AdjustStartCommand}"
+                                                CommandParameter="0.1" />
+                                        <TextBlock Text="–" FontSize="10"
+                                                   Foreground="{StaticResource TextDisabledBrush}"
+                                                   VerticalAlignment="Center" Margin="3,0" />
+                                        <Button Content="−"
+                                                Background="{StaticResource BgQuaternaryBrush}"
+                                                Foreground="{StaticResource TextTertiaryBrush}"
+                                                BorderThickness="0"
+                                                Width="18" Height="18" Padding="0" FontSize="10"
+                                                Cursor="Hand"
+                                                Command="{Binding AdjustEndCommand}"
+                                                CommandParameter="-0.1" />
+                                        <TextBox Width="36" Height="18" FontSize="9"
+                                                 FontFamily="{StaticResource FontFamilyMono}"
+                                                 TextAlignment="Center"
+                                                 VerticalContentAlignment="Center"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 Margin="2,0,2,0"
+                                                 Text="{Binding EndTime, Mode=OneWay, StringFormat={}{0:F1}}"
+                                                 LostKeyboardFocus="OnEndLostFocus"
+                                                 KeyDown="OnEndKeyDown"
+                                                 Tag="{Binding}" />
+                                        <Button Content="+"
+                                                Background="{StaticResource BgQuaternaryBrush}"
+                                                Foreground="{StaticResource TextTertiaryBrush}"
+                                                BorderThickness="0"
+                                                Width="18" Height="18" Padding="0" FontSize="10"
+                                                Cursor="Hand"
+                                                Command="{Binding AdjustEndCommand}"
+                                                CommandParameter="0.1" />
+                                        <Button x:Name="QuickEditBtn" Content="⋯"
+                                                Background="{StaticResource BgQuaternaryBrush}"
+                                                Foreground="{StaticResource TextTertiaryBrush}"
+                                                BorderThickness="0"
+                                                Width="22" Height="18" Padding="0" FontSize="10"
+                                                Margin="6,0,0,0" Cursor="Hand"
+                                                Tag="{Binding}"
+                                                Click="OnQuickEditClick" />
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</UserControl>

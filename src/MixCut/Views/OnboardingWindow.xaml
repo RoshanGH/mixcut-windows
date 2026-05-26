@@ -1,0 +1,189 @@
+<Window x:Class="MixCut.Views.OnboardingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MixCut 使用引导"
+        Icon="/Resources/AppIcon.ico" Width="560" Height="500"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="White">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 步骤内容 -->
+        <Grid Grid.Row="0" Margin="36,32,36,16">
+            <!-- Step 0 欢迎 -->
+            <StackPanel x:Name="WelcomePage" VerticalAlignment="Center">
+                <TextBlock Text="🎬" FontSize="56" HorizontalAlignment="Center"
+                           Foreground="#1D6BE5" Margin="0,0,0,8" />
+                <TextBlock Text="欢迎使用 MixCut" FontSize="24" FontWeight="Bold"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="AI 驱动的广告视频混剪工具" FontSize="13"
+                           Foreground="#888" HorizontalAlignment="Center" Margin="0,4,0,18" />
+                <Border Background="#F4F5F7" CornerRadius="12" Padding="18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="✂" FontSize="14" Foreground="#1D6BE5"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="AI 自动按语义切分视频镜头" FontSize="12"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="✨" FontSize="14" Foreground="#8C5BE5"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="智能排列组合生成差异化广告视频" FontSize="12"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📤" FontSize="14" Foreground="#2E8B57"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="一键批量导出为可用的 MP4 视频" FontSize="12"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Step 1 API Key -->
+            <StackPanel x:Name="ApiKeyPage" VerticalAlignment="Center" Visibility="Collapsed">
+                <TextBlock Text="🔑" FontSize="50" HorizontalAlignment="Center"
+                           Foreground="#E67E22" Margin="0,0,0,8" />
+                <TextBlock Text="第一步 · 配置 AI Key" FontSize="22" FontWeight="Bold"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="MixCut 需要大模型完成语义分析与混剪策略"
+                           FontSize="12" Foreground="#888" HorizontalAlignment="Center"
+                           Margin="0,4,0,18" TextAlignment="Center" />
+                <Border Background="#F4F5F7" CornerRadius="12" Padding="18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="①" FontSize="14" Foreground="#1D6BE5"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="打开「设置 → API」" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="②" FontSize="14" Foreground="#1D6BE5"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="选择提供商：千问 / MiniMax / Claude / 自定义"
+                                       FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="③" FontSize="14" Foreground="#1D6BE5"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="粘贴 API Key 并保存" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <Button x:Name="OpenSettingsButton" Content="⚙ 打开设置..." Margin="0,16,0,0"
+                        Padding="14,7" FontSize="12" FontWeight="Medium"
+                        Background="#F0F0F2" BorderThickness="0" Cursor="Hand"
+                        HorizontalAlignment="Center" Click="OnOpenSettings" />
+            </StackPanel>
+
+            <!-- Step 2 导入 -->
+            <StackPanel x:Name="ImportPage" VerticalAlignment="Center" Visibility="Collapsed">
+                <TextBlock Text="📥" FontSize="50" HorizontalAlignment="Center"
+                           Foreground="#1D6BE5" Margin="0,0,0,8" />
+                <TextBlock Text="第二步 · 导入广告素材" FontSize="22" FontWeight="Bold"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="新建项目后把视频拖进来，剩下交给 AI"
+                           FontSize="12" Foreground="#888" HorizontalAlignment="Center"
+                           Margin="0,4,0,18" TextAlignment="Center" />
+                <Border Background="#F4F5F7" CornerRadius="12" Padding="18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="🎙" FontSize="14" Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="Whisper 本地识别台词（不上传云端）"
+                                       FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="🎞" FontSize="14" Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="镜头切分 + I-frame 精准边界对齐"
+                                       FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🏷" FontSize="14" Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="AI 自动标注语义：产品展示、口播、卖点..."
+                                       FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <TextBlock Text="💡 首次分析会自动下载约 1.6GB 的语音识别模型"
+                           FontSize="11" Foreground="#AAA" Margin="0,12,0,0"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <!-- Step 3 生成 -->
+            <StackPanel x:Name="GeneratePage" VerticalAlignment="Center" Visibility="Collapsed">
+                <TextBlock Text="✨" FontSize="50" HorizontalAlignment="Center"
+                           Foreground="#8C5BE5" Margin="0,0,0,8" />
+                <TextBlock Text="第三步 · 生成方案并导出" FontSize="22" FontWeight="Bold"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="AI 先制定策略，再挑选具体分镜，批量混剪"
+                           FontSize="12" Foreground="#888" HorizontalAlignment="Center"
+                           Margin="0,4,0,18" TextAlignment="Center" />
+                <Border Background="#F4F5F7" CornerRadius="12" Padding="18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="📋" FontSize="14" Foreground="#8C5BE5"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="在「混剪方案」点「生成方案」"
+                                       FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="✨" FontSize="14" Foreground="#8C5BE5"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="AI 自动制定风格、受众、叙事结构"
+                                       FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📤" FontSize="14" Foreground="#2E8B57"
+                                       Width="22" VerticalAlignment="Center" />
+                            <TextBlock Text="在「导出」批量输出 MP4 视频文件"
+                                       FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <TextBlock Text="🎬 准备好了，开始你的第一个项目吧"
+                           FontSize="11" Foreground="#AAA" Margin="0,12,0,0"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" Height="1" Background="#E5E5E7" />
+
+        <!-- 底部控制条 -->
+        <Grid Grid.Row="2" Margin="20,12,20,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="SkipButton" Grid.Column="0" Content="跳过"
+                    Background="Transparent" BorderThickness="0" Foreground="#888"
+                    FontSize="12" Padding="6,3" Cursor="Hand" Click="OnSkip" />
+
+            <!-- 分页圆点 -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Ellipse x:Name="Dot0" Width="7" Height="7" Margin="3,0" Fill="#1D6BE5" />
+                <Ellipse x:Name="Dot1" Width="7" Height="7" Margin="3,0" Fill="#D0D0D5" />
+                <Ellipse x:Name="Dot2" Width="7" Height="7" Margin="3,0" Fill="#D0D0D5" />
+                <Ellipse x:Name="Dot3" Width="7" Height="7" Margin="3,0" Fill="#D0D0D5" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="PrevButton" Content="上一步" Margin="0,0,8,0" Padding="14,6"
+                        FontSize="12" Background="#F0F0F2" BorderThickness="0"
+                        Cursor="Hand" Click="OnPrev" Visibility="Collapsed" />
+                <Button x:Name="NextButton" Content="下一步 ›" Padding="16,6"
+                        FontSize="12" FontWeight="SemiBold"
+                        Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                        Cursor="Hand" Click="OnNext"
+                        IsDefault="True" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

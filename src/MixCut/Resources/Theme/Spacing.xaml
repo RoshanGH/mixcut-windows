@@ -1,0 +1,39 @@
+<!--
+    间距 + 圆角 + 阴影 token。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!-- 间距阶梯（用作 Margin/Padding 的统一数值；Thickness 在使用处拼） -->
+    <sys:Double x:Key="SpacingXxs">2</sys:Double>
+    <sys:Double x:Key="SpacingXs">4</sys:Double>
+    <sys:Double x:Key="SpacingSm">6</sys:Double>
+    <sys:Double x:Key="SpacingMd">8</sys:Double>
+    <sys:Double x:Key="SpacingMd2">10</sys:Double>
+    <sys:Double x:Key="SpacingLg">12</sys:Double>
+    <sys:Double x:Key="SpacingLg2">14</sys:Double>
+    <sys:Double x:Key="SpacingXl">16</sys:Double>
+    <sys:Double x:Key="SpacingXl2">20</sys:Double>
+    <sys:Double x:Key="SpacingXxl">24</sys:Double>
+    <sys:Double x:Key="SpacingXxxl">32</sys:Double>
+
+    <!-- 圆角 -->
+    <CornerRadius x:Key="CornerRadiusXs">4</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusSm">6</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusMd">8</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusLg">10</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusXl">14</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusPill">999</CornerRadius>
+
+    <!-- 阴影（Effect） -->
+    <DropShadowEffect x:Key="ShadowSm" Color="Black" Opacity="0.06"
+                      BlurRadius="4" ShadowDepth="1" />
+    <DropShadowEffect x:Key="ShadowMd" Color="Black" Opacity="0.10"
+                      BlurRadius="8" ShadowDepth="2" />
+    <DropShadowEffect x:Key="ShadowLg" Color="Black" Opacity="0.18"
+                      BlurRadius="12" ShadowDepth="3" />
+    <DropShadowEffect x:Key="ShadowToast" Color="Black" Opacity="0.30"
+                      BlurRadius="10" ShadowDepth="2" />
+
+</ResourceDictionary>

@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>MixCut</RootNamespace>
+    <AssemblyName>MixCut</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\AppIcon.ico</ApplicationIcon>
+    <Platforms>AnyCPU;x64</Platforms>
+    <RuntimeIdentifier Condition="'$(SelfContained)' == 'true'">win-x64</RuntimeIdentifier>
+    <!-- Windows 版独立编号节奏（首发对齐 macOS v0.2.4 + Windows 独有重构） -->
+    <Version>0.3.0</Version>
+    <AssemblyVersion>0.3.0.0</AssemblyVersion>
+    <FileVersion>0.3.0.0</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- App 图标：声明为 Resource 让 Window.Icon="/Resources/AppIcon.ico" pack URI 可解析 -->
+    <Resource Include="Resources\AppIcon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AI Prompt 模板：随应用拷贝到输出目录 -->
+    <Content Include="Resources\Prompts\*.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内置二进制（FFmpeg/ffprobe/whisper-cli 及依赖 DLL）：拷贝到输出 bin\ 子目录 -->
+    <Content Include="Resources\bin\**\*" Condition="Exists('Resources\bin')">
+      <Link>bin\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
+    <!-- 虚拟化 WrapPanel：分镜库 100+ 卡片场景下视口外不实例化，消除首次进入卡顿。
+         参考 https://github.com/sbaeumlisberger/VirtualizingWrapPanel -->
+    <PackageReference Include="VirtualizingWrapPanel" Version="2.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+  </ItemGroup>
+
+</Project>

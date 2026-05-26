@@ -1,0 +1,103 @@
+<UserControl x:Class="MixCut.Views.WelcomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="White">
+    <Grid>
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                    MaxWidth="500" Margin="32">
+            <!-- Logo & 标题 -->
+            <TextBlock Text="🎬" FontSize="42" HorizontalAlignment="Center" Margin="0,0,0,8" />
+            <TextBlock Text="MixCut" FontSize="30" FontWeight="Bold"
+                       HorizontalAlignment="Center" Foreground="#1D6BE5" />
+            <TextBlock Text="AI 驱动的广告视频混剪工具"
+                       FontSize="14" Foreground="#888" HorizontalAlignment="Center"
+                       Margin="0,4,0,28" />
+
+            <!-- 功能亮点 -->
+            <Border Background="#F5F5F7" CornerRadius="10" Padding="18,16" Margin="0,0,0,24">
+                <StackPanel>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="36" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="28" Height="28" Background="#E7F0FF" CornerRadius="6"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="✂" FontSize="14" Foreground="#1D6BE5"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="AI 自动按语义切分视频镜头"
+                                   FontSize="13" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="36" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="28" Height="28" Background="#F4E8FF" CornerRadius="6"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="✨" FontSize="14" Foreground="#9333EA"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="智能排列组合生成新广告视频"
+                                   FontSize="13" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="36" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="28" Height="28" Background="#E2F5E8" CornerRadius="6"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="⬆" FontSize="14" Foreground="#2E8B57"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="一键导出为可用的 MP4 视频"
+                                   FontSize="13" VerticalAlignment="Center" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- CTA -->
+            <Button x:Name="CreateButton" Padding="36,12" FontSize="14" FontWeight="SemiBold"
+                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                    HorizontalAlignment="Center" Cursor="Hand" Click="OnCreateClick">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="+" FontSize="16" FontWeight="Bold" Margin="0,0,6,0" />
+                    <TextBlock Text="创建新项目" />
+                </StackPanel>
+            </Button>
+
+            <!-- 最近项目快捷入口（最多 3 个，按 UpdatedAt 倒序）。
+                 删掉冗余的「或从左侧选择一个已有项目」提示——下方「最近的项目」标题已经表达清楚。 -->
+            <StackPanel x:Name="RecentProjectsSection" Margin="0,16,0,0" Visibility="Collapsed">
+                <TextBlock Text="最近的项目" FontSize="11" FontWeight="SemiBold"
+                           Foreground="#888" Margin="0,0,0,8"
+                           HorizontalAlignment="Center" />
+                <ItemsControl x:Name="RecentProjectsList">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- 依赖状态警告 -->
+            <Border x:Name="WarningBox" Background="#FFF5E0" BorderBrush="#FFD080"
+                    BorderThickness="1" CornerRadius="8" Padding="14,10"
+                    Margin="0,18,0,0" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="ApiKeyWarning" FontSize="12" Foreground="#7A5800"
+                               Margin="0,0,0,4" Visibility="Collapsed">
+                        🔑  请先在设置中配置 AI API Key
+                    </TextBlock>
+                    <TextBlock x:Name="WhisperWarning" FontSize="12" Foreground="#7A5800"
+                               Visibility="Collapsed">
+                        🎙  语音识别模型未下载（设置 → 通用 → 下载模型）
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Grid>
+</UserControl>

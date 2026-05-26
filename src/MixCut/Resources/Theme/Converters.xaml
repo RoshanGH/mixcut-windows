@@ -1,0 +1,33 @@
+<!--
+    Converter 实例化为 StaticResource，供整个 App 引用。
+    所有 Converter 无状态，单例 + Freeze 安全。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:conv="clr-namespace:MixCut.Views.Converters">
+
+    <conv:NullToVisibilityConverter x:Key="NullToVisibility" />
+    <conv:NullToVisibilityConverter x:Key="NotNullToCollapsed" Invert="True" />
+
+    <conv:EmptyCollectionToVisibilityConverter x:Key="EmptyToCollapsed" />
+    <conv:EmptyCollectionToVisibilityConverter x:Key="NonEmptyToCollapsed" Invert="True" />
+
+    <conv:InverseBoolConverter x:Key="InverseBool" />
+    <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityInverse" Invert="True" />
+
+    <conv:QualityScoreToBrushConverter x:Key="QualityScoreToBrush" />
+    <conv:SemanticTypeToBrushConverter x:Key="SemanticTypeToBrush" />
+    <conv:SemanticTypeToTintBrushConverter x:Key="SemanticTypeToTintBrush" />
+
+    <conv:DurationToStringConverter x:Key="DurationToString" />
+
+    <conv:SelectedToBorderBrushConverter x:Key="SelectedToBorderBrush" />
+    <conv:SelectedToBackgroundBrushConverter x:Key="SelectedToBackgroundBrush" />
+
+    <conv:SemanticTypeToLabelConverter x:Key="SemanticTypeToLabel" />
+    <conv:PositionTypeToLabelConverter x:Key="PositionTypeToLabel" />
+
+</ResourceDictionary>

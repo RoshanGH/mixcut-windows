@@ -1,0 +1,290 @@
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+
+namespace MixCut.Views.Components;
+
+/// <summary>
+/// 原地视频播放器：缩略图 ↔ 播放态切换。对应 macOS 版 InlineVideoPlayer。
+/// 使用 WPF 内置 <see cref="MediaElement"/>（依赖系统媒体编解码）。
+/// 支持完整视频播放和分镜片段播放（startTime → endTime）。
+/// </summary>
+public partial class InlineVideoPlayer : UserControl
+{
+    private string? _videoPath;
+    private double? _segmentStart;
+    private double? _segmentEnd;
+    private bool _isSeeking;
+    private DispatcherTimer? _timer;
+    private DispatcherTimer? _hoverTimer;
+
+    /// <summary>
+    /// 全局协调：任意 InlineVideoPlayer 开始播放时通知其他实例停止。
+    /// 对齐 Mac viewModel.requestPlay 的「全局唯一播放」行为。
+    /// </summary>
+    private static event Action<InlineVideoPlayer>? PlaybackStarted;
+
+    /// <summary>true 时鼠标停 350ms 自动播放，离开立即停。分镜库默认 true，ImportView 默认 false。</summary>
+    public bool AutoPlayOnHover { get; set; }
+
+    public InlineVideoPlayer()
+    {
+        InitializeComponent();
+        Unloaded += (_, _) =>
+        {
+            PlaybackStarted -= OnAnotherPlayerStarted;
+            Stop();
+        };
+        Loaded += (_, _) =>
+        {
+            PlaybackStarted -= OnAnotherPlayerStarted;
+            PlaybackStarted += OnAnotherPlayerStarted;
+        };
+        MouseEnter += OnRootMouseEnter;
+        MouseLeave += OnRootMouseLeave;
+    }
+
+    private void OnAnotherPlayerStarted(InlineVideoPlayer who)
+    {
+        if (!ReferenceEquals(who, this) && PlayingState.Visibility == Visibility.Visible)
+        {
+            Stop();
+        }
+    }
+
+    private void OnRootMouseEnter(object sender, MouseEventArgs e)
+    {
+        if (!AutoPlayOnHover) return;
+        _hoverTimer?.Stop();
+        _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+        _hoverTimer.Tick += (_, _) =>
+        {
+            _hoverTimer?.Stop();
+            _hoverTimer = null;
+            // 计时器触发时鼠标仍在控件内 && 还没播 → 自动开播
+            if (IsMouseOver && PlayingState.Visibility != Visibility.Visible)
+            {
+                OnPlayClick(this, new RoutedEventArgs());
+            }
+        };
+        _hoverTimer.Start();
+    }
+
+    private void OnRootMouseLeave(object sender, MouseEventArgs e)
+    {
+        if (!AutoPlayOnHover) return;
+        _hoverTimer?.Stop();
+        _hoverTimer = null;
+        // hover 模式：离开就停（对齐 Mac 行为）
+        if (PlayingState.Visibility == Visibility.Visible)
+        {
+            Stop();
+        }
+    }
+
+    /// <summary>设置完整视频（用于项目概览视频卡片）。</summary>
+    public void SetVideo(string videoPath, string? thumbnailPath)
+    {
+        _videoPath = videoPath;
+        _segmentStart = null;
+        _segmentEnd = null;
+        ThumbImage.Source = LoadThumb(thumbnailPath);
+    }
+
+    /// <summary>设置分镜片段（用于分镜库卡片）—— 播放时只播指定时间范围。</summary>
+    public void SetSegment(string videoPath, string? thumbnailPath, double startTime, double endTime)
+    {
+        var videoPathChanged = _videoPath != videoPath;
+        _videoPath = videoPath;
+        _segmentStart = startTime;
+        _segmentEnd = endTime;
+        if (videoPathChanged)
+        {
+            ThumbImage.Source = LoadThumb(thumbnailPath);
+        }
+        var duration = endTime - startTime;
+        DurationBadgeText.Text = duration.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "s";
+        DurationBadge.Visibility = Visibility.Visible;
+
+        // 如果正在播放：根据新区间调整当前位置
+        // - 当前位置 < 新 startTime → seek 到 startTime
+        // - 当前位置 > 新 endTime → seek 到 startTime 重头开始（也可选择 Stop()，但用户调 ±0.1s 时连续看到内容更友好）
+        if (PlayingState.Visibility == Visibility.Visible && Player.NaturalDuration.HasTimeSpan)
+        {
+            var posSec = Player.Position.TotalSeconds;
+            if (posSec < startTime || posSec > endTime)
+            {
+                Player.Position = TimeSpan.FromSeconds(startTime);
+            }
+            ProgressSlider.Minimum = startTime;
+            ProgressSlider.Maximum = endTime;
+        }
+    }
+
+    private static BitmapImage? LoadThumb(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            return null;
+        }
+        try
+        {
+            using var stream = File.OpenRead(path);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private void OnPlayClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_videoPath) || !File.Exists(_videoPath))
+        {
+            return;
+        }
+        // 通知其他 InlineVideoPlayer 实例停止（全局唯一播放）
+        PlaybackStarted?.Invoke(this);
+
+        Player.Source = new Uri(_videoPath);
+        ThumbnailState.Visibility = Visibility.Collapsed;
+        PlayingState.Visibility = Visibility.Visible;
+        Player.Play();
+        StartTimer();
+    }
+
+    private void OnPauseClick(object sender, RoutedEventArgs e)
+    {
+        if (Player.CanPause)
+        {
+            Player.Pause();
+            PauseButton.Content = "▶";
+        }
+        else
+        {
+            Player.Play();
+            PauseButton.Content = "⏸";
+        }
+    }
+
+    private void OnStopClick(object sender, RoutedEventArgs e) => Stop();
+
+    private void Stop()
+    {
+        StopTimer();
+        try
+        {
+            Player.Stop();
+            Player.Close();
+            Player.Source = null;
+        }
+        catch (Exception)
+        {
+            // ignore
+        }
+        PlayingState.Visibility = Visibility.Collapsed;
+        ThumbnailState.Visibility = Visibility.Visible;
+        PauseButton.Content = "⏸";
+    }
+
+    private void OnMediaOpened(object sender, RoutedEventArgs e)
+    {
+        if (!Player.NaturalDuration.HasTimeSpan)
+        {
+            return;
+        }
+        var totalSec = Player.NaturalDuration.TimeSpan.TotalSeconds;
+        var startSec = _segmentStart ?? 0;
+        var endSec = _segmentEnd ?? totalSec;
+
+        DurationText.Text = FormatTime(endSec - startSec);
+        ProgressSlider.Minimum = startSec;
+        ProgressSlider.Maximum = endSec;
+
+        // 分镜模式：跳转到起点
+        if (_segmentStart is { } start && start > 0)
+        {
+            Player.Position = TimeSpan.FromSeconds(start);
+        }
+    }
+
+    private void OnMediaEnded(object sender, RoutedEventArgs e) => Stop();
+
+    private void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
+    {
+        Stop();
+        MessageBox.Show("视频播放失败：" + e.ErrorException.Message + "\n该格式可能需要系统媒体编解码支持。",
+            "播放错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private void OnSliderDragStart(object sender, DragStartedEventArgs e) => _isSeeking = true;
+
+    private void OnSliderDragEnd(object sender, DragCompletedEventArgs e)
+    {
+        Player.Position = TimeSpan.FromSeconds(ProgressSlider.Value);
+        _isSeeking = false;
+    }
+
+    private void OnSliderValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isSeeking)
+        {
+            var offset = e.NewValue - (_segmentStart ?? 0);
+            CurrentTimeText.Text = FormatTime(Math.Max(0, offset));
+        }
+    }
+
+    private void StartTimer()
+    {
+        StopTimer();
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _timer.Tick += (_, _) =>
+        {
+            if (!Player.NaturalDuration.HasTimeSpan)
+            {
+                return;
+            }
+            var posSec = Player.Position.TotalSeconds;
+
+            // 分镜模式：到达 endTime 自动停止
+            if (_segmentEnd is { } end && posSec >= end)
+            {
+                Stop();
+                return;
+            }
+
+            if (!_isSeeking)
+            {
+                ProgressSlider.Value = posSec;
+                var offset = posSec - (_segmentStart ?? 0);
+                CurrentTimeText.Text = FormatTime(Math.Max(0, offset));
+            }
+        };
+        _timer.Start();
+    }
+
+    private void StopTimer()
+    {
+        _timer?.Stop();
+        _timer = null;
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return ts.TotalHours >= 1
+            ? ts.ToString(@"h\:mm\:ss")
+            : ts.ToString(@"m\:ss");
+    }
+}

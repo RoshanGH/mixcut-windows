@@ -1,0 +1,115 @@
+<!--
+    颜色 token（Stage 0 设计文档 §4.4）。
+    所有视图统一引用 StaticResource，不再硬编码 hex。
+    暗黑模式（Stage 6）通过 Dark.xaml 覆盖同名 key 实现。
+
+    ⚠ 设计要点：Brush 直接内联 Color hex，不引用同文件 Color StaticResource。
+    原因：WPF LoadOptimizedTemplateContent 加载 ControlTemplate 时，BindingExpression
+    的 Color StaticResource 解析可能在 invalidate 时返回 UnsetValue，导致 BorderBrush
+    赋值崩溃。Color 资源仍然保留（供 ColorAnimation 用），但 Brush 不依赖。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ========== Color 资源（供 ColorAnimation 用） ========== -->
+    <Color x:Key="AccentBlue">#FF1D6BE5</Color>
+    <Color x:Key="AccentBlueDark">#FF1556B8</Color>
+    <Color x:Key="AccentBlueLight">#FFE7F0FF</Color>
+    <Color x:Key="AccentBlueHover">#FFECF2FE</Color>
+    <Color x:Key="SuccessGreen">#FF2E8B57</Color>
+    <Color x:Key="SuccessGreenDark">#FF1E6E3F</Color>
+    <Color x:Key="SuccessGreenLight">#FFE2F5E8</Color>
+    <Color x:Key="WarningOrange">#FFC06F00</Color>
+    <Color x:Key="DangerRed">#FFD33A3A</Color>
+    <Color x:Key="DangerRedDark">#FFA12626</Color>
+    <Color x:Key="PurpleAccent">#FF9333EA</Color>
+    <Color x:Key="BgPrimary">#FFFFFFFF</Color>
+    <Color x:Key="BgSecondary">#FFF5F5F7</Color>
+    <Color x:Key="TextPrimary">#FF1F1F23</Color>
+
+    <!-- ========== Brush（内联 Color，不依赖其他 StaticResource） ========== -->
+
+    <!-- 品牌主色（蓝） -->
+    <SolidColorBrush x:Key="AccentBlueBrush" Color="#1D6BE5" />
+    <SolidColorBrush x:Key="AccentBlueDarkBrush" Color="#1556B8" />
+    <SolidColorBrush x:Key="AccentBlueLightBrush" Color="#E7F0FF" />
+    <SolidColorBrush x:Key="AccentBlueHoverBrush" Color="#ECF2FE" />
+    <SolidColorBrush x:Key="AccentBlueAlpha10Brush" Color="#181D6BE5" />
+    <SolidColorBrush x:Key="AccentBlueAlpha20Brush" Color="#331D6BE5" />
+
+    <!-- 成功（绿） -->
+    <SolidColorBrush x:Key="SuccessGreenBrush" Color="#2E8B57" />
+    <SolidColorBrush x:Key="SuccessGreenDarkBrush" Color="#1E6E3F" />
+    <SolidColorBrush x:Key="SuccessGreenLightBrush" Color="#E2F5E8" />
+    <SolidColorBrush x:Key="SuccessGreenBorderBrush" Color="#A6E0BC" />
+
+    <!-- 警告（橙） -->
+    <SolidColorBrush x:Key="WarningOrangeBrush" Color="#C06F00" />
+    <SolidColorBrush x:Key="WarningOrangeTextBrush" Color="#7A5800" />
+    <SolidColorBrush x:Key="WarningOrangeBgBrush" Color="#FFF5E0" />
+    <SolidColorBrush x:Key="WarningOrangeBgSoftBrush" Color="#FFF8E1" />
+    <SolidColorBrush x:Key="WarningOrangeBgSoftestBrush" Color="#FFF7E8" />
+    <SolidColorBrush x:Key="WarningOrangeBgChipBrush" Color="#FFF1DC" />
+    <SolidColorBrush x:Key="WarningOrangeBorderBrush" Color="#FFD080" />
+    <SolidColorBrush x:Key="WarningOrangeButtonBrush" Color="#F0AD4E" />
+
+    <!-- 危险（红） -->
+    <SolidColorBrush x:Key="DangerRedBrush" Color="#D33A3A" />
+    <SolidColorBrush x:Key="DangerRedDarkBrush" Color="#A12626" />
+    <SolidColorBrush x:Key="DangerRedBgBrush" Color="#FDE2E2" />
+    <SolidColorBrush x:Key="DangerRedBgSoftBrush" Color="#FFF5F5" />
+    <SolidColorBrush x:Key="DangerRedBorderBrush" Color="#F5B7B7" />
+
+    <!-- 紫（方案 / AI 生成） -->
+    <SolidColorBrush x:Key="PurpleAccentBrush" Color="#9333EA" />
+    <SolidColorBrush x:Key="PurpleAccentVariantBrush" Color="#8C5BE5" />
+    <SolidColorBrush x:Key="PurpleAccentLightBrush" Color="#F4E8FF" />
+
+    <!-- 中性背景 -->
+    <SolidColorBrush x:Key="BgPrimaryBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="BgSecondaryBrush" Color="#F5F5F7" />
+    <SolidColorBrush x:Key="BgTertiaryBrush" Color="#F0F0F2" />
+    <SolidColorBrush x:Key="BgQuaternaryBrush" Color="#F2F2F4" />
+    <SolidColorBrush x:Key="BgHoverBrush" Color="#FAFAFC" />
+    <SolidColorBrush x:Key="BgSubtleBrush" Color="#F4F5F7" />
+    <SolidColorBrush x:Key="BgVerySubtleBrush" Color="#FAFAFA" />
+
+    <!-- 边框 -->
+    <SolidColorBrush x:Key="BorderPrimaryBrush" Color="#E5E5E7" />
+    <SolidColorBrush x:Key="BorderSecondaryBrush" Color="#E0E0E2" />
+    <SolidColorBrush x:Key="BorderSubtleBrush" Color="#EEEEEE" />
+    <SolidColorBrush x:Key="BorderStrongBrush" Color="#D0D0D5" />
+    <SolidColorBrush x:Key="BorderHoverBrush" Color="#CCCCCC" />
+
+    <!-- 文本 -->
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1F1F23" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#3A3A3F" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#666666" />
+    <SolidColorBrush x:Key="TextQuaternaryBrush" Color="#999999" />
+    <SolidColorBrush x:Key="TextQuinaryBrush" Color="#BBBBBB" />
+    <SolidColorBrush x:Key="TextDisabledBrush" Color="#CCCCCC" />
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FFFFFF" />
+
+    <!-- 视频/缩略图遮罩 -->
+    <SolidColorBrush x:Key="OverlayDarkSubtleBrush" Color="#40000000" />
+    <SolidColorBrush x:Key="OverlayDarkMediumBrush" Color="#80000000" />
+    <SolidColorBrush x:Key="OverlayDarkStrongBrush" Color="#90000000" />
+    <SolidColorBrush x:Key="OverlayDarkVeryStrongBrush" Color="#A0000000" />
+    <SolidColorBrush x:Key="OverlayDangerBrush" Color="#A0CC2222" />
+    <SolidColorBrush x:Key="OverlayProgressBgBrush" Color="#30FFFFFF" />
+    <SolidColorBrush x:Key="OverlayProgressBgSubtleBrush" Color="#40FFFFFF" />
+
+    <!-- 语义类型 chip 颜色（11 种 SemanticType） -->
+    <SolidColorBrush x:Key="SemHookBrush" Color="#EF4444" />
+    <SolidColorBrush x:Key="SemPainPointBrush" Color="#F97316" />
+    <SolidColorBrush x:Key="SemProductBrush" Color="#3B82F6" />
+    <SolidColorBrush x:Key="SemResultsBrush" Color="#10B981" />
+    <SolidColorBrush x:Key="SemSocialProofBrush" Color="#A855F7" />
+    <SolidColorBrush x:Key="SemPriceBrush" Color="#EAB308" />
+    <SolidColorBrush x:Key="SemPromotionBrush" Color="#EC4899" />
+    <SolidColorBrush x:Key="SemCtaBrush" Color="#14B8A6" />
+    <SolidColorBrush x:Key="SemPositioningBrush" Color="#0D9488" />
+    <SolidColorBrush x:Key="SemUsageBrush" Color="#6366F1" />
+    <SolidColorBrush x:Key="SemTransitionBrush" Color="#71717A" />
+
+</ResourceDictionary>

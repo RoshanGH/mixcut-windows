@@ -1,0 +1,320 @@
+<UserControl x:Class="MixCut.Views.ImportView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:comp="clr-namespace:MixCut.Views.Components"
+             Background="White" AllowDrop="True"
+             Drop="OnDrop" DragOver="OnDragOver" DragLeave="OnDragLeave">
+    <DockPanel Margin="24">
+        <!-- 顶部：标题 + 导入按钮 -->
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+            <TextBlock Text="素材导入" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
+            <Button Content="选择视频文件" HorizontalAlignment="Right" Padding="18,8"
+                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                    Cursor="Hand" Click="OnImportClick" />
+        </Grid>
+
+        <!-- 处理进度横幅 -->
+        <Border DockPanel.Dock="Top" x:Name="ProgressPanel" Background="#E7F0FF"
+                CornerRadius="8" Padding="12,10" Margin="0,0,0,12" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="140" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="PhaseText" FontSize="12" FontWeight="SemiBold" Foreground="#1D6BE5" />
+                    <TextBlock x:Name="ProgressText" FontSize="11" Foreground="#666" Margin="0,2,0,0" />
+                </StackPanel>
+                <ProgressBar Grid.Column="1" x:Name="ProgressBar" Height="6"
+                             Maximum="1" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- 错误横幅 -->
+        <Border DockPanel.Dock="Top" x:Name="ErrorBanner" Background="#FFF5E0"
+                BorderBrush="#FFD080" BorderThickness="1" CornerRadius="8"
+                Padding="12,8" Margin="0,0,0,12" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="ErrorText" FontSize="11" Foreground="#7A5800"
+                           TextWrapping="Wrap" />
+                <Button Grid.Column="1" Content="✕" Padding="6,2" Margin="8,0,0,0"
+                        Background="Transparent" BorderThickness="0"
+                        Click="OnDismissError" Cursor="Hand" />
+            </Grid>
+        </Border>
+
+        <!-- 拖拽区 -->
+        <Border DockPanel.Dock="Top" x:Name="DropZone" BorderThickness="2"
+                CornerRadius="14" Padding="0,28" Margin="0,0,0,16">
+            <Border.BorderBrush>
+                <SolidColorBrush x:Name="DropBorderBrush" Color="#CCCCCC" />
+            </Border.BorderBrush>
+            <Border.Background>
+                <SolidColorBrush x:Name="DropBackgroundBrush" Color="#FAFAFA" />
+            </Border.Background>
+            <StackPanel HorizontalAlignment="Center">
+                <TextBlock x:Name="DropIcon" Text="⬇" FontSize="36" Foreground="#999"
+                           HorizontalAlignment="Center" />
+                <TextBlock x:Name="DropMainText" Text="拖拽视频文件到此处" FontSize="14" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" Margin="0,8,0,4" />
+                <TextBlock Text="支持 MP4 / MOV / AVI / M4V / MKV"
+                           FontSize="11" Foreground="#999"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <!-- 视频列表 -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <Grid x:Name="VideoListHeader" Margin="0,0,0,8" Visibility="Collapsed">
+                    <TextBlock Text="已导入视频" FontSize="12" FontWeight="SemiBold"
+                               Foreground="#666" />
+                    <TextBlock x:Name="VideoCountText" FontSize="11" Foreground="#999"
+                               HorizontalAlignment="Right" />
+                </Grid>
+                <ItemsControl x:Name="VideoList">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- 双栏卡片：左视频/信息 195px + 1px 分隔 + 右台词滚动 195px。对齐 macOS 版 ImportedVideoCard -->
+                            <Border BorderBrush="#E5E5E7" BorderThickness="1" CornerRadius="10"
+                                    Margin="0,0,12,12" Background="White" Width="420">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="复制文件名" Click="OnCopyName" Tag="{Binding}" />
+                                        <MenuItem Header="在资源管理器中显示" Click="OnShowInExplorer" Tag="{Binding}" />
+                                        <Separator />
+                                        <MenuItem Header="删除视频" Click="OnDeleteVideoMenu" Tag="{Binding}" />
+                                    </ContextMenu>
+                                </Border.ContextMenu>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="4" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="1" />
+                                        <ColumnDefinition Width="195" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 左侧状态边带（失败红/完成绿，处理中/已导入不显示）-->
+                                    <Border Grid.Column="0" Background="#D33A3A"
+                                            Visibility="{Binding FailedStripVisibility}" CornerRadius="10,0,0,10" />
+                                    <Border Grid.Column="0" Background="#2E8B57"
+                                            Visibility="{Binding CompletedStripVisibility}" CornerRadius="10,0,0,10" />
+
+                                    <!-- 左侧面板：视频 + 信息 -->
+                                    <StackPanel Grid.Column="1" Margin="10,10,10,10">
+                                        <!-- 播放器（status 稳定时显示）-->
+                                        <Border Background="Black" CornerRadius="8" ClipToBounds="True"
+                                                Height="240"
+                                                Visibility="{Binding InlinePlayerVisibility}">
+                                            <comp:InlineVideoPlayer Loaded="OnInlinePlayerLoaded"
+                                                                    Tag="{Binding}" />
+                                        </Border>
+                                        <!-- 静态缩略图 + 状态遮罩 + 实时进度（处理中/失败时显示）-->
+                                        <Border Background="Black" CornerRadius="8" ClipToBounds="True"
+                                                Height="240"
+                                                Visibility="{Binding StaticThumbnailVisibility}">
+                                            <Grid>
+                                                <Image Source="{Binding ThumbnailImage}" Stretch="Uniform" />
+                                                <!-- 处理中：半透明遮罩 + spinner + 阶段文字 + 底部进度条 -->
+                                                <Border Background="#A0000000"
+                                                        Visibility="{Binding BusyOverlayVisibility}">
+                                                    <Grid>
+                                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <!-- WPF 内置无限进度条（旋转条形） -->
+                                                            <ProgressBar IsIndeterminate="True" Height="3" Width="120"
+                                                                         Foreground="#1D6BE5"
+                                                                         Background="#40FFFFFF"
+                                                                         BorderThickness="0" />
+                                                            <TextBlock Text="{Binding StageLabel}" Foreground="White"
+                                                                       FontSize="12" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center" Margin="0,10,0,0"
+                                                                       TextWrapping="Wrap" TextAlignment="Center" />
+                                                        </StackPanel>
+                                                        <!-- 底部 3px 进度条（百分比） -->
+                                                        <ProgressBar Value="{Binding ProgressOverall, Mode=OneWay}"
+                                                                     Maximum="1" Height="3"
+                                                                     VerticalAlignment="Bottom"
+                                                                     Foreground="#1D6BE5"
+                                                                     Background="#30FFFFFF"
+                                                                     BorderThickness="0" />
+                                                    </Grid>
+                                                </Border>
+                                                <!-- 失败：红色遮罩 + 文字 -->
+                                                <Border Background="#A0CC2222"
+                                                        Visibility="{Binding FailedStripVisibility}">
+                                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <TextBlock Text="✕" Foreground="White" FontSize="36"
+                                                                   FontWeight="Bold" HorizontalAlignment="Center" />
+                                                        <TextBlock Text="处理失败" Foreground="White" FontSize="12"
+                                                                   FontWeight="SemiBold" Margin="0,4,0,0"
+                                                                   HorizontalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- 文件名 -->
+                                        <TextBox Text="{Binding Name, Mode=OneWay}" Margin="0,8,0,0"
+                                                 FontSize="11" FontWeight="Medium"
+                                                 IsReadOnly="True" BorderThickness="0"
+                                                 Background="Transparent" TextWrapping="Wrap"
+                                                 MaxHeight="36" ToolTip="{Binding Name}" />
+
+                                        <!-- meta -->
+                                        <TextBlock Text="{Binding MetaText}" FontSize="10"
+                                                   Foreground="#888" Margin="0,4,0,0" />
+
+                                        <!-- 处理流水线 -->
+                                        <Border Background="{Binding PipelineBackground}" CornerRadius="6"
+                                                Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left"
+                                                Visibility="{Binding PipelineVisibility}">
+                                            <TextBlock Text="{Binding PipelineText}" FontSize="9"
+                                                       Foreground="#333" FontWeight="SemiBold" />
+                                        </Border>
+
+                                        <!-- 状态徽章 + 重试 -->
+                                        <Grid Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Background="{Binding BadgeBackground}"
+                                                    CornerRadius="999" Padding="7,2">
+                                                <TextBlock Text="{Binding StatusLabel}"
+                                                           Foreground="{Binding BadgeForeground}"
+                                                           FontSize="10" FontWeight="SemiBold" />
+                                            </Border>
+                                            <Button Grid.Column="2" Content="重试" Padding="8,2"
+                                                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                                                    FontSize="10" Tag="{Binding}" Click="OnRetryClick"
+                                                    Visibility="{Binding RetryVisibility}" />
+                                        </Grid>
+
+                                        <!-- 错误信息 -->
+                                        <TextBlock Text="{Binding ErrorText}" FontSize="10" Foreground="#D33"
+                                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Visibility="{Binding ErrorVisibility}" />
+
+                                        <!-- 分镜类型分布 -->
+                                        <TextBlock Text="{Binding SegmentTagsText}" FontSize="10"
+                                                   Foreground="#1D6BE5" Margin="0,4,0,0"
+                                                   TextWrapping="Wrap"
+                                                   Visibility="{Binding SegmentTagsVisibility}" />
+                                    </StackPanel>
+
+                                    <!-- 分隔线 -->
+                                    <Border Grid.Column="2" Background="#EEEEEE" Margin="0,12" />
+
+                                    <!-- 右侧台词面板（可滚动）-->
+                                    <DockPanel Grid.Column="3" Margin="10,10,10,10">
+                                        <!-- 标题栏 -->
+                                        <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="🎙" FontSize="10" Margin="0,0,4,0" />
+                                                <TextBlock Text="台词" FontSize="10" FontWeight="SemiBold"
+                                                           Foreground="#888" />
+                                                <TextBlock Text="{Binding TranscriptCharText}"
+                                                           FontSize="9" Foreground="#AAA"
+                                                           FontFamily="Consolas, monospace"
+                                                           VerticalAlignment="Bottom" Margin="6,0,0,0" />
+                                            </StackPanel>
+                                            <!-- ASR 异常时显示「重做」按钮（对齐 Mac retryASR 入口） -->
+                                            <Button Grid.Column="1"
+                                                    Visibility="{Binding AsrRedoVisibility}"
+                                                    Tag="{Binding}"
+                                                    Click="OnRedoAsrClick"
+                                                    Background="#FFF1DC"
+                                                    Foreground="#C06F00"
+                                                    BorderThickness="0"
+                                                    Padding="6,2" FontSize="10"
+                                                    FontWeight="SemiBold"
+                                                    Cursor="Hand"
+                                                    ToolTip="ASR 分句较粗，点击重新识别">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="↻ " FontWeight="Bold" />
+                                                    <TextBlock Text="重做" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+
+                                        <!-- ASR 异常提示条 -->
+                                        <Border DockPanel.Dock="Top"
+                                                Visibility="{Binding AsrAbnormalHintVisibility}"
+                                                Background="#FFF7E8" CornerRadius="4"
+                                                Padding="6,3" Margin="0,0,0,4">
+                                            <TextBlock FontSize="9" Foreground="#7A5800"
+                                                       TextWrapping="Wrap"
+                                                       Text="⚠ 分句较粗，可点击右上「重做」重新识别" />
+                                        </Border>
+
+                                        <!-- 空状态：暂无台词 -->
+                                        <StackPanel DockPanel.Dock="Top"
+                                                    Visibility="{Binding EmptyTranscriptVisibility}"
+                                                    HorizontalAlignment="Center" Margin="0,40,0,0">
+                                            <TextBlock Text="⌛" FontSize="20" Foreground="#CCC"
+                                                       HorizontalAlignment="Center" />
+                                            <TextBlock Text="暂无台词" FontSize="11" Foreground="#AAA"
+                                                       HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                        </StackPanel>
+
+                                        <!-- 句子列表：用 VirtualizingStackPanel 虚拟化，单视频 100+ 句不卡。
+                                             对齐 macOS v0.2.5 commit 6530fd6 的「全板块懒加载补齐」。 -->
+                                        <ScrollViewer Visibility="{Binding SentencesVisibility}"
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      CanContentScroll="True"
+                                                      MaxHeight="320">
+                                            <ItemsControl ItemsSource="{Binding Sentences}"
+                                                          VirtualizingPanel.IsVirtualizing="True"
+                                                          VirtualizingPanel.VirtualizationMode="Recycling">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <VirtualizingStackPanel />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,2,0,2">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="32" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding Time}"
+                                                                       FontSize="9" Foreground="#BBB"
+                                                                       FontFamily="Consolas, monospace"
+                                                                       TextAlignment="Right"
+                                                                       Margin="0,1,4,0" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding Text}"
+                                                                       FontSize="11" Foreground="#333"
+                                                                       TextWrapping="Wrap"
+                                                                       LineHeight="16" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </DockPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

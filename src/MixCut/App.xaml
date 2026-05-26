@@ -1,0 +1,12 @@
+<Application x:Class="MixCut.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 主题入口：默认 Light，Stage 6 时新增 Dark 通过 ThemeManager 切换 -->
+                <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Light.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

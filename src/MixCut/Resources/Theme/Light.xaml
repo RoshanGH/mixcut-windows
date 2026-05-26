@@ -1,0 +1,14 @@
+<!--
+    浅色主题（默认）。Stage 0 留骨架，先聚合所有 token 资源。
+    Stage 6 暗黑模式实现时新增 Dark.xaml 覆盖部分 key。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Brushes.xaml" />
+        <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Typography.xaml" />
+        <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Spacing.xaml" />
+        <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Styles.xaml" />
+        <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Converters.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+</ResourceDictionary>
