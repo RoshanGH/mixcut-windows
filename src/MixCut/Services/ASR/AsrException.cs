@@ -8,6 +8,7 @@ public enum AsrErrorKind
 {
     ModelNotFound,
     WhisperNotFound,
+    CpuNotSupported,
 }
 
 /// <summary>ASR 语音识别异常，携带面向用户的中文提示。</summary>
@@ -25,4 +26,9 @@ public sealed class AsrException : Exception
 
     public static AsrException WhisperNotFound() =>
         new(AsrErrorKind.WhisperNotFound, "语音识别组件未找到，请重新安装应用");
+
+    public static AsrException CpuNotSupported() =>
+        new(AsrErrorKind.CpuNotSupported,
+            "当前 CPU 不支持 AVX2 指令集，无法运行内置 Whisper 语音识别。" +
+            "请在 Intel Haswell（2013+）或 AMD Excavator（2015+）及更新的处理器上运行。");
 }

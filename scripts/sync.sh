@@ -14,7 +14,12 @@ SSH_OPTS=(-i "$SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes)
 ssh "${SSH_OPTS[@]}" "$REMOTE" \
   "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force '$WIN_DIR' | Out-Null\""
 
-# 同步源码与解决方案文件（Mac 端不含 bin/obj，源码干净）
-scp "${SSH_OPTS[@]}" -q -r "$LOCAL_DIR/src" "$LOCAL_DIR/MixCut.sln" "$REMOTE:$WIN_DIR/"
+# 同步源码、sln、installer 脚本、scripts 目录（Mac 端不含 bin/obj，源码干净）
+scp "${SSH_OPTS[@]}" -q -r \
+  "$LOCAL_DIR/src" \
+  "$LOCAL_DIR/MixCut.sln" \
+  "$LOCAL_DIR/installer" \
+  "$LOCAL_DIR/scripts" \
+  "$REMOTE:$WIN_DIR/"
 
 echo "同步完成 -> $WIN_DIR"

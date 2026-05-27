@@ -13,10 +13,10 @@
     <ApplicationIcon>Resources\AppIcon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
     <RuntimeIdentifier Condition="'$(SelfContained)' == 'true'">win-x64</RuntimeIdentifier>
-    <!-- Windows 版独立编号节奏（v0.3.1: 修复 v0.3.0 缺 VC Runtime 导致 whisper-cli 在干净机崩溃） -->
-    <Version>0.3.1</Version>
-    <AssemblyVersion>0.3.1.0</AssemblyVersion>
-    <FileVersion>0.3.1.0</FileVersion>
+    <!-- Windows 版独立编号节奏（v0.4.0: 完整环境适配 + Inno Setup 安装包 + self-contained Runtime） -->
+    <Version>0.4.0</Version>
+    <AssemblyVersion>0.4.0.0</AssemblyVersion>
+    <FileVersion>0.4.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

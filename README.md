@@ -94,6 +94,48 @@ dotnet publish src/MixCut/MixCut.csproj -c Release -r win-x64 --self-contained f
 
 详细技术架构、跨机器开发流程、商业 toC 标准、自我验证铁律见 [CLAUDE.md](./CLAUDE.md)。
 
+## 故障排查
+
+### 首次启动相关
+
+| 症状 | 原因 | 解决步骤 |
+|---|---|---|
+| 双击安装包出现「Windows 已保护你的电脑」蓝色弹窗 | SmartScreen 拦截未签名应用 | 点「**更多信息**」→「**仍要运行**」。以后不会再弹 |
+| 双击 MixCut.exe 没反应 | .NET 8 Desktop Runtime 缺失 | v0.4.0+ 安装包自带 Runtime，不会有这问题。若是绿色版 zip：[下载 .NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/8.0) |
+| 启动一闪而过 | App 启动期崩溃 | 查日志 `%APPDATA%\MixCut\logs\mixcut-YYYYMMDD.log`，搜 `[FTL]` |
+| 杀软（360/腾讯管家/Defender）拦截 `whisper-cli.exe` 或 `ffmpeg.exe` | 未签名 EXE 被误报 | 把 MixCut 安装目录加入杀软白名单 |
+
+### 功能错误
+
+| 症状（日志或界面文案） | 错误码 | 含义 | 解决步骤 |
+|---|---|---|---|
+| 语音识别失败：进程异常退出 ExitCode=-1073741515 | 0xC0000135 STATUS_DLL_NOT_FOUND | VC++ Runtime DLL 缺失 | 升级到 v0.3.1+（含 6 个 VC Runtime DLL）。v0.4.0 起还多带了 vcomp140（OpenMP runtime）|
+| 语音识别失败：进程异常退出 ExitCode=-1073741795 | 0xC000001D STATUS_ILLEGAL_INSTRUCTION | CPU 不支持 AVX2 | 老 CPU（Intel < Haswell 2013 / AMD < Excavator 2015）跑不了内置 whisper-cli。其它功能仍可用 |
+| 启动弹窗「MixCut 安装包不完整」 | 内置二进制被杀软隔离 | bin\ 目录下文件被删 | 把整个安装目录加杀软白名单，重装 |
+| 启动弹窗「MixCut 数据目录无法写入」 | %APPDATA% 不可写 | 漫游目录权限异常 / GPO 限制 | v0.4.0 已三级兜底（自动回退 LocalAppData 或 EXE 同级 data/）。仍不行联系管理员 |
+| 启动弹窗「CPU 不支持 AVX2」 | n/a | 见上 | 见上 |
+| 导入视频卡片首帧黑屏 | n/a | thumbnail 没生成 | 已修复（v0.3.0+）。重启应用会自动后台补齐 `[ThumbRepair]` |
+
+### 一键收集诊断信息
+
+把这段 PowerShell 复制到任意 PowerShell 窗口跑（无需管理员），会输出最新一份日志里的关键诊断：
+
+```powershell
+$log = Get-ChildItem $env:APPDATA\MixCut\logs -Filter "mixcut-*.log" |
+       Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Get-Content $log.FullName |
+    Select-String -Pattern "EnvDiag|VcRuntimeDiag|CpuDiag|BinariesDiag|AppDataDiag|HwProbe|\[WRN\]|\[ERR\]|\[FTL\]"
+```
+
+### 启动期诊断 tag 一览（按出现顺序）
+
+- `[AppDataDiag] selected=tier1-Roaming root=...` — 数据目录三级兜底选了哪一层
+- `[EnvDiag] os=... arch=... cpu=... vcrt=... bin=... appdata=... installdir=... path=... pass=...` — 启动一行汇总
+- `[VcRuntimeDiag] all 6 VC Runtime DLLs present` — VC++ Runtime 完整
+- `[HwProbe] encode=h264_qsv decode=qsv whisper=cpu` — 硬件加速选择
+
+如果 `[EnvDiag] pass=False`，对照表格找出问题 = 1 分钟自助解决。
+
 ## 致谢
 
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — 本地语音识别

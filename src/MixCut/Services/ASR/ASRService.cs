@@ -78,6 +78,14 @@ public sealed class ASRService
             throw AsrException.WhisperNotFound();
         }
 
+        // AVX2 兜底：内置 whisper-cli 用 AVX2 指令集编译，老 CPU 跑会立即 SIGILL (ExitCode=-1073741795 / 0xC000001D)。
+        // 启动期 EnvironmentDiagnostics 已经弹过窗，这里再硬挡一道避免真的产生外部进程崩溃 → 让上层捕获到友好异常。
+        if (!System.Runtime.Intrinsics.X86.Avx2.IsSupported)
+        {
+            _logger.LogError("[CpuDiag] CPU 不支持 AVX2，无法运行内置 whisper-cli；跳过 ASR");
+            throw AsrException.CpuNotSupported();
+        }
+
         // Step 1: 提取音频为 16kHz mono WAV。
         progress?.Report(0.02);
         var tempWav = Path.Combine(FileHelper.TempDirectory, $"audio_{Guid.NewGuid():N}.wav");

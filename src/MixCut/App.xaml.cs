@@ -82,20 +82,10 @@ public partial class App : Application
         await _host.StartAsync();
         Log.Information("MixCut 启动，数据目录: {Root}", AppPaths.Root);
 
-        // VC Runtime DLL 探测：whisper-cli / ffmpeg 用 MSVC 编译，依赖 VCRUNTIME140 等。
-        // v0.3.1 起把 6 个 DLL 随包分发；若用户机器仍缺，启动期立即报警，
-        // 不要等 ASR 跑起来再撞 STATUS_DLL_NOT_FOUND (-1073741515 / 0xC0000135)。
-        var (vcAllPresent, vcMissing) = Infrastructure.BundledBinaries.ProbeVcRuntime();
-        if (vcAllPresent)
-        {
-            Log.Information("[VcRuntimeDiag] all 6 VC Runtime DLLs present in {Dir}",
-                Infrastructure.BundledBinaries.BinDirectory);
-        }
-        else
-        {
-            Log.Warning("[VcRuntimeDiag] missing VC Runtime DLLs in {Dir}: {Missing}",
-                Infrastructure.BundledBinaries.BinDirectory, string.Join(", ", vcMissing));
-        }
+        // 启动期环境一站式体检（v0.4.0）：OS/CPU/AVX2/VC Runtime/Binaries/AppData/InstallDir。
+        // 一行汇总 [EnvDiag] 写日志，关键失败立即弹窗。让用户在撞运行时崩溃前先看到清晰指引。
+        var envReport = Infrastructure.EnvironmentDiagnostics.RunAndLog();
+        ShowEnvDialogsIfNeeded(envReport);
 
         // 启动时主动跑一次硬件能力探测（包含 encode smoke test + decode hwaccel 选择），
         // 结果写日志。后续所有 ffmpeg / ASR 任务用探测结果按优先级走 GPU/CPU 兜底。
@@ -230,6 +220,55 @@ public partial class App : Application
         {
             // 状态清理失败不能阻止应用启动 —— 大不了让用户在 ImportView 看到「分析中」假象。
             Log.Warning(ex, "重置卡死视频状态失败，忽略");
+        }
+    }
+
+    /// <summary>
+    /// 根据 EnvironmentDiagnostics 结果按需弹窗。原则：
+    /// - 致命（binaries 缺失 / AppData 不可写）= 阻塞 OK 弹窗，用户点完仍可继续（让他看 log 自救）
+    /// - 中等（CPU 不支持 AVX2 / OS 太老）= 非阻塞警告，ASR 功能后续会失败但其它能用
+    /// - 低（VC Runtime 缺 / OneDrive 目录）= 仅日志，不打扰
+    /// </summary>
+    private static void ShowEnvDialogsIfNeeded(Infrastructure.EnvironmentDiagnostics.Report r)
+    {
+        // 致命：内置二进制缺
+        if (!r.BinariesOk)
+        {
+            MessageBox.Show(
+                "MixCut 安装包不完整：检测到以下文件缺失\n\n" +
+                string.Join("\n", r.BinariesMissing) +
+                "\n\n请重新下载安装包，或将 MixCut 解压目录加入杀软白名单后再试。",
+                "MixCut 启动异常", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+
+        // 致命：AppData 不可写
+        if (!r.AppDataWritable)
+        {
+            MessageBox.Show(
+                "MixCut 数据目录无法写入：\n\n" + r.AppDataRoot +
+                "\n\n可能原因：被杀软拦截、权限被回收、磁盘已满或漫游目录损坏。\n" +
+                "请检查权限或联系管理员。",
+                "MixCut 数据目录错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+
+        // 中等：CPU 不支持 AVX2 —— ASR 会跑不起来
+        if (!r.CpuAvx2)
+        {
+            MessageBox.Show(
+                "您的 CPU 不支持 AVX2 指令集。\n\n" +
+                "MixCut 的语音识别（Whisper）需要 AVX2，运行时会立即崩溃。\n" +
+                "其它功能（视频导入 / AI 切分 / 方案生成 / 导出）仍可正常使用。\n\n" +
+                "建议在 Intel Haswell（2013+）/ AMD Excavator（2015+）及更新 CPU 上运行。",
+                "MixCut 兼容性提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        // 中等：OS 太老（Win10 1809 以下）
+        if (r.OsBuild > 0 && r.OsBuild < 17763)
+        {
+            MessageBox.Show(
+                $"MixCut 要求 Windows 10 1809 (Build 17763) 或更高，当前为 Build {r.OsBuild}。\n\n" +
+                "应用可能可以启动但部分系统 API 不可用，建议升级操作系统。",
+                "MixCut 兼容性提示", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
