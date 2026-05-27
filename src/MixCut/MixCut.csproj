@@ -13,10 +13,10 @@
     <ApplicationIcon>Resources\AppIcon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
     <RuntimeIdentifier Condition="'$(SelfContained)' == 'true'">win-x64</RuntimeIdentifier>
-    <!-- Windows 版独立编号节奏（v0.4.0: 完整环境适配 + Inno Setup 安装包 + self-contained Runtime） -->
-    <Version>0.4.0</Version>
-    <AssemblyVersion>0.4.0.0</AssemblyVersion>
-    <FileVersion>0.4.0.0</FileVersion>
+    <!-- v0.4.1: 修复 NVENC 导出 "Unrecognized option allow_sw" 全失败 -->
+    <Version>0.4.1</Version>
+    <AssemblyVersion>0.4.1.0</AssemblyVersion>
+    <FileVersion>0.4.1.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

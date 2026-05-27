@@ -282,6 +282,19 @@ v0.3.0 因此踩了 `whisper-cli.exe` 缺 VCRUNTIME140.dll 的坑，用户机器
 
 诊断 grep 关键字：`[VcRuntimeDiag]` —— 启动期；`ExitCode=-1073741515` —— 用户机器跑外部进程时撞 DLL 缺失的标志。
 
+#### 外部进程 codec-specific 选项必须真实路径自验证（v0.4.0 事故沉淀 ⚠️）
+
+`HardwareEncoderProbe` 启动期跑的 NVENC/QSV smoke test **只验证「能编 1 帧」**，不能保证我们实际导出命令里的 codec-private 选项被新版 ffmpeg 接受。
+v0.4.0 因此踩了 `-allow_sw 0` 的坑 —— gyan.dev ffmpeg 8.1.1 起把这个曾经 NVENC 私有的选项移除，全局解析器拒识，导出全部失败 `exit -1414549496` (`0xABABABAB` "Unrecognized option, Error splitting the argument list: Option not found")。
+**关键**：构建机选 QSV 路径，**根本走不到 NVENC 死代码**，所以 smoke test + 启动检查全绿，但 N 卡用户机器一导出就崩。
+
+发版前必跑：
+- **真实导出测试**（不是 smoke test）：导入视频 → 生成方案 → **导出 MP4 → 用播放器播一遍**
+- 构建机如果只能选某个 codec（如只有 QSV），用 `ffmpeg -h encoder=<codec>` 检查所有 codec-private 选项是否仍有效
+- 看实际 `FFmpegRunner` 拼的命令，**每个 codec 私有参数都要在 `ffmpeg -h encoder=<那个 codec>` 输出里能找到**
+
+诊断 grep 关键字：`exit -1414549496` / `Unrecognized option` —— ffmpeg 选项解析失败。
+
 ### 10. 不允许的反模式
 
 - ❌ 把 `dotnet publish` 当作发版门槛挂在用户确认上

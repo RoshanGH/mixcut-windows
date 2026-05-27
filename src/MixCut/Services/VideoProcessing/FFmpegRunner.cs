@@ -452,17 +452,16 @@ public sealed class FFmpegRunner
         if (isHardware)
         {
             // 硬件编码（nvenc / qsv / amf / mf）不支持 CRF，必须用比特率 + maxrate 控质量。
-            // NVENC 加 -allow_sw 0 禁止静默回落软件，对齐 Mac videotoolbox 的 -allow_sw 0；
-            // -tag:v hvc1 让 H.265 在 QuickTime/Safari 可播。
+            // -tag:v hvc1/avc1 让产物在 QuickTime/Safari/Windows 媒体播放器都能播。
+            //
+            // 注意：v0.4.1 起移除了 NVENC 的 -allow_sw 0 选项 —— gyan.dev ffmpeg 8.1.1 起
+            // 该选项被全局解析器拒识为「Unrecognized option」，导致整条导出路径失败
+            // (exit -1414549496) Error splitting the argument list: Option not found"。
+            // HardwareEncoderProbe 启动期已经做了真实 smoke test 确保 codec 可用，无需额外强制。
             args.AddRange(new[] { "-c:v", codec });
             args.AddRange(new[] { "-b:v", $"{videoBitrateKbps}k" });
             args.AddRange(new[] { "-maxrate", $"{videoBitrateKbps * 2}k" });
             args.AddRange(new[] { "-bufsize", $"{videoBitrateKbps * 2}k" });
-            // NVENC 专属：强制硬件，探测失败时立刻报错而不是悄悄回落 CPU
-            if (codec.Contains("nvenc", StringComparison.OrdinalIgnoreCase))
-            {
-                args.AddRange(new[] { "-allow_sw", "0" });
-            }
             // H.265 加 hvc1 tag（部分 Windows 播放器与跨平台兼容）。
             var isHevc = codec.Contains("hevc", StringComparison.OrdinalIgnoreCase)
                          || codec.Contains("h265", StringComparison.OrdinalIgnoreCase);
