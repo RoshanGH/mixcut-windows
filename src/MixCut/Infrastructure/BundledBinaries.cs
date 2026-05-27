@@ -18,4 +18,28 @@ public static class BundledBinaries
     public static bool FfmpegAvailable => File.Exists(Ffmpeg);
     public static bool FfprobeAvailable => File.Exists(Ffprobe);
     public static bool WhisperAvailable => File.Exists(WhisperCli);
+
+    /// <summary>
+    /// whisper-cli.exe 和 ffmpeg.exe 用 MSVC 编译，依赖 VC++ Runtime DLL。
+    /// 若用户机器没装 VC++ Redist，进程启动时会报 STATUS_DLL_NOT_FOUND (-1073741515 / 0xC0000135)。
+    /// v0.3.1 起把 6 个 VC Runtime DLL 随应用打包到 bin\，开箱即用。
+    /// </summary>
+    public static readonly string[] RequiredVcRuntimeDlls = new[]
+    {
+        "vcruntime140.dll",
+        "vcruntime140_1.dll",
+        "msvcp140.dll",
+        "msvcp140_1.dll",
+        "msvcp140_2.dll",
+        "concrt140.dll",
+    };
+
+    /// <summary>返回 VC Runtime DLL 在 bin\ 里的存在性，缺失的会列出。</summary>
+    public static (bool AllPresent, string[] Missing) ProbeVcRuntime()
+    {
+        var missing = RequiredVcRuntimeDlls
+            .Where(d => !File.Exists(Path.Combine(BinDirectory, d)))
+            .ToArray();
+        return (missing.Length == 0, missing);
+    }
 }

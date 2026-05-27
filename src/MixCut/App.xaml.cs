@@ -81,6 +81,22 @@ public partial class App : Application
     {
         await _host.StartAsync();
         Log.Information("MixCut 启动，数据目录: {Root}", AppPaths.Root);
+
+        // VC Runtime DLL 探测：whisper-cli / ffmpeg 用 MSVC 编译，依赖 VCRUNTIME140 等。
+        // v0.3.1 起把 6 个 DLL 随包分发；若用户机器仍缺，启动期立即报警，
+        // 不要等 ASR 跑起来再撞 STATUS_DLL_NOT_FOUND (-1073741515 / 0xC0000135)。
+        var (vcAllPresent, vcMissing) = Infrastructure.BundledBinaries.ProbeVcRuntime();
+        if (vcAllPresent)
+        {
+            Log.Information("[VcRuntimeDiag] all 6 VC Runtime DLLs present in {Dir}",
+                Infrastructure.BundledBinaries.BinDirectory);
+        }
+        else
+        {
+            Log.Warning("[VcRuntimeDiag] missing VC Runtime DLLs in {Dir}: {Missing}",
+                Infrastructure.BundledBinaries.BinDirectory, string.Join(", ", vcMissing));
+        }
+
         // 启动时主动跑一次硬件能力探测（包含 encode smoke test + decode hwaccel 选择），
         // 结果写日志。后续所有 ffmpeg / ASR 任务用探测结果按优先级走 GPU/CPU 兜底。
         _ = Task.Run(() => Infrastructure.HardwareEncoderProbe.EagerInit());
