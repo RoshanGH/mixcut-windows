@@ -84,6 +84,12 @@ public partial class ImportViewModel : ObservableObject
     public event Action? VideoListChanged;
 
     /// <summary>
+    /// 视频分析完成、segments 写入 DB 之后触发。MainWindow 用来失效 SegmentLibrary / Schemes 的视图缓存，
+    /// 避免「分析完切到分镜库看到旧数据，重启才有」的 bug（v0.5.0 修复）。
+    /// </summary>
+    public event Action? SegmentsChanged;
+
+    /// <summary>
     /// 从 DB 拉取当前项目的视频列表（含 Segments）。
     /// UI 通过此方法获取最新数据，避免依赖 stale entity navigation。
     /// </summary>
@@ -264,11 +270,9 @@ public partial class ImportViewModel : ObservableObject
         {
             SetProjectStatus(projectId, ProjectStatus.Analyzing);
 
-            // 并发降级：每路视频会跑 ffmpeg（场景检测/静音）+ whisper（吃满线程）。
-            // 之前 N/2 并发让风扇狂转。改用 N/4 + 上限 3，保留系统响应。
-            var maxConcurrency = Math.Min(
-                Math.Max(1, Environment.ProcessorCount / 4),
-                Math.Min(3, videosToAnalyze.Count));
+            // 并发数走统一策略（Infrastructure.ConcurrencyPolicy）。
+            // v0.5.0 起根据 HwProbe.DecodeHwaccel 给 GPU 解码可用的机器 +1 路加成。
+            var maxConcurrency = Infrastructure.ConcurrencyPolicy.MaxAnalyzeConcurrency(videosToAnalyze.Count);
             ProgressDescription = $"并行分析 {videosToAnalyze.Count} 个视频（{maxConcurrency} 路并发）...";
 
             using var semaphore = new SemaphoreSlim(maxConcurrency);
@@ -294,9 +298,15 @@ public partial class ImportViewModel : ObservableObject
                     var done = Interlocked.Increment(ref completed);
                     Progress = 0.2 + (double)done / videosToAnalyze.Count * 0.8;
                     ProgressDescription = $"已完成 {done}/{videosToAnalyze.Count} 个视频分析";
+                    // 每个视频 segments 入库后立即通知 MainWindow 失效 SegmentLibrary/Schemes 缓存。
+                    // 用户切过去时强制重新 LoadProject，避免「分析完看不到分镜，重启才有」的 bug。
+                    SegmentsChanged?.Invoke();
                 }
             });
             await Task.WhenAll(tasks);
+
+            // 全部分析完成最后再触发一次，确保最终状态被刷到。
+            SegmentsChanged?.Invoke();
         }
 
         SetProjectStatus(projectId, ProjectStatus.Ready);

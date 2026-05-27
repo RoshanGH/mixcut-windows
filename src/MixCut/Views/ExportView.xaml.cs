@@ -224,8 +224,8 @@ public partial class ExportView : UserControl, IProjectView
             return;
         }
 
-        // 并发数：(cores - 2) / 2，至少 1 路、最多 8 路（对齐 macOS）。
-        var concurrency = Math.Max(1, Math.Min(8, (Environment.ProcessorCount - 2) / 2));
+        // v0.5.0：走 ConcurrencyPolicy 统一策略，有 GPU 编码时加成（NVENC/QSV/AMF +3 路）。
+        var concurrency = Infrastructure.ConcurrencyPolicy.MaxExportConcurrency(tasks.Count);
 
         CompletePanel.Visibility = Visibility.Collapsed;
         ErrorPanel.Visibility = Visibility.Collapsed;

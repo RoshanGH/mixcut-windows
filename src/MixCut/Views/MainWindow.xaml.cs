@@ -44,6 +44,10 @@ public partial class MainWindow : Window
 
         RefreshDepsWarning();
 
+        // v0.5.0 修复：素材分析完写入 segments 后，失效依赖该数据的视图缓存。
+        // 否则用户切到 SegmentLibrary / Schemes 时仍看到旧数据，必须重启应用才能刷新。
+        _vm.ImportVM.SegmentsChanged += OnSegmentsChanged;
+
         if (_settings.LastSelectedProjectId is { } lastId)
         {
             var match = _vm.ProjectVM.Projects.FirstOrDefault(p => p.Id == lastId);
@@ -141,6 +145,27 @@ public partial class MainWindow : Window
     public void NavigateTo(NavigationItem item)
     {
         NavList.SelectedIndex = (int)item;
+    }
+
+    /// <summary>
+    /// 分析完成 / segments 写库后失效 SegmentLibrary 和 Schemes 的视图缓存。
+    /// 用户下次切过去时强制 LoadProject 重查 DB，避免看到旧数据。
+    /// 如果当前正在这俩视图，立刻刷一遍 UpdateContent。
+    /// </summary>
+    private void OnSegmentsChanged()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            _viewLastLoadedProjectId.Remove(NavigationItem.SegmentLibrary);
+            _viewLastLoadedProjectId.Remove(NavigationItem.Schemes);
+            _viewLastLoadedProjectId.Remove(NavigationItem.Overview);
+            if (_vm.SelectedNavItem is NavigationItem.SegmentLibrary
+                or NavigationItem.Schemes
+                or NavigationItem.Overview)
+            {
+                UpdateContent();
+            }
+        });
     }
 
     private void RefreshAfterProjectChange()

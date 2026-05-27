@@ -74,6 +74,40 @@ public static class HardwareEncoderProbe
         }
     }
 
+    /// <summary>解码加速友好名（CUDA / Intel QSV / D3D11VA / DXVA2 / 无）。</summary>
+    public static string DecodeHwaccelDescription
+    {
+        get
+        {
+            EnsureProbed();
+            return _decodeHwaccel switch
+            {
+                null => "无（CPU 软件解码）",
+                "cuda" => "NVIDIA CUDA",
+                "qsv" => "Intel Quick Sync",
+                "d3d11va" => "D3D11VA（DirectX 11）",
+                "dxva2" => "DXVA2（DirectX 9）",
+                _ => _decodeHwaccel,
+            };
+        }
+    }
+
+    /// <summary>Whisper 后端友好名（当前永远 CPU，预留未来 GPU build）。</summary>
+    public static string WhisperBackendDescription
+    {
+        get
+        {
+            EnsureProbed();
+            return _whisperBackend switch
+            {
+                "cuda" => "NVIDIA CUDA",
+                "vulkan" => "Vulkan",
+                "cpu" => "CPU（Whisper 当前不支持 GPU 加速）",
+                _ => _whisperBackend,
+            };
+        }
+    }
+
     /// <summary>启动时主动触发一次探测，让结果尽早入日志。</summary>
     public static void EagerInit() => EnsureProbed();
 

@@ -272,16 +272,38 @@ public partial class SettingsWindow : Window
         AddPathRow("数据库", AppPaths.DatabaseFile);
         AddPathRow("Whisper 模型目录", AppPaths.WhisperModelsDirectory);
 
-        // 系统信息。
+        // 系统信息（v0.5.0：加 GPU 状态 + 并发数透明拆解）。
         var cores = Environment.ProcessorCount;
-        var maxAnalyze = Math.Max(1, cores / 2);
-        var maxExport = Math.Max(1, Math.Min(8, (cores - 2) / 2));
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0";
 
         SystemInfoPanel.Children.Clear();
         AddInfoRow(SystemInfoPanel, "CPU 核心数", $"{cores} 核");
-        AddInfoRow(SystemInfoPanel, "同时分析视频数", $"最多 {maxAnalyze} 个");
-        AddInfoRow(SystemInfoPanel, "同时导出视频数", $"最多 {maxExport} 个");
+
+        // GPU 状态（编码 / 解码 / Whisper 后端）
+        var encDesc = Infrastructure.HardwareEncoderProbe.HardwareDescription;
+        var encDetail = Infrastructure.HardwareEncoderProbe.H264Hardware is { } h264
+            ? $"{encDesc}（{h264}"
+              + (Infrastructure.HardwareEncoderProbe.H265Hardware is { } h265 ? $", {h265}）" : "）")
+            : encDesc;
+        AddInfoRow(SystemInfoPanel, "GPU 编码加速",
+            Infrastructure.HardwareEncoderProbe.H264Hardware is not null
+                ? $"✓ {encDetail}"
+                : $"✗ {encDesc}");
+
+        AddInfoRow(SystemInfoPanel, "GPU 解码加速",
+            Infrastructure.HardwareEncoderProbe.DecodeHwaccel is not null
+                ? $"✓ {Infrastructure.HardwareEncoderProbe.DecodeHwaccelDescription}"
+                : $"✗ {Infrastructure.HardwareEncoderProbe.DecodeHwaccelDescription}");
+
+        AddInfoRow(SystemInfoPanel, "语音识别后端",
+            Infrastructure.HardwareEncoderProbe.WhisperBackendDescription);
+
+        // 并发数（v0.5.0 起 ConcurrencyPolicy 单一来源，含 GPU 加成透明拆解）
+        AddInfoRow(SystemInfoPanel, "同时分析视频数",
+            Infrastructure.ConcurrencyPolicy.ExplainAnalyzeFormula());
+        AddInfoRow(SystemInfoPanel, "同时导出视频数",
+            Infrastructure.ConcurrencyPolicy.ExplainExportFormula());
+
         AddInfoRow(SystemInfoPanel, "版本", version);
         AddInfoRow(SystemInfoPanel, "操作系统", Environment.OSVersion.VersionString);
 
