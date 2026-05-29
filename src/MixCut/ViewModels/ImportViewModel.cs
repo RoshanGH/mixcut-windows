@@ -823,11 +823,13 @@ public partial class ImportViewModel : ObservableObject
             {
                 return;
             }
-            var midTime = (segment.StartTime + segment.EndTime) / 2;
+            // v0.3.1 对齐：分镜缩略图改用「首帧」(startTime + 100ms)，
+            // 100ms 偏移避开完全在起点的转场/黑帧。
+            var firstFrameTime = Math.Max(0, segment.StartTime + 0.1);
             var thumbPath = Path.Combine(thumbDir, $"seg_{segment.Id}.jpg");
             try
             {
-                await _ffmpeg.GenerateThumbnailAsync(videoPath, thumbPath, midTime);
+                await _ffmpeg.GenerateThumbnailAsync(videoPath, thumbPath, firstFrameTime);
                 segment.ThumbnailPath = thumbPath;
             }
             catch (Exception)

@@ -219,7 +219,8 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
                         && !string.IsNullOrEmpty(s.Video.LocalPath)
                         && (string.IsNullOrEmpty(s.ThumbnailPath)
                             || !System.IO.File.Exists(s.ThumbnailPath)))
-            .Select(s => (s.Id, VideoPath: s.Video!.LocalPath, MidTime: (s.StartTime + s.EndTime) / 2.0))
+            // v0.3.1 对齐：分镜缩略图改用「首帧」(startTime + 100ms)，避开转场/黑帧。
+            .Select(s => (s.Id, VideoPath: s.Video!.LocalPath, FirstFrameTime: Math.Max(0, s.StartTime + 0.1)))
             .ToList();
         if (snapshot.Count == 0) return;
 
@@ -228,12 +229,12 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         _logger.LogInformation("[ThumbRepair] 需要补生成 {N} 个 segment 缩略图", snapshot.Count);
 
         // 串行执行，避免吃 CPU（每次 ffmpeg 几十毫秒，30 个加起来 ~3s）
-        foreach (var (segId, videoPath, midTime) in snapshot)
+        foreach (var (segId, videoPath, firstFrameTime) in snapshot)
         {
             try
             {
                 var thumbPath = System.IO.Path.Combine(thumbDir, $"seg_{segId}.jpg");
-                await _ffmpeg.GenerateThumbnailAsync(videoPath, thumbPath, midTime);
+                await _ffmpeg.GenerateThumbnailAsync(videoPath, thumbPath, firstFrameTime);
                 // 写回 DB
                 await using (var db = await _dbFactory.CreateDbContextAsync())
                 {
