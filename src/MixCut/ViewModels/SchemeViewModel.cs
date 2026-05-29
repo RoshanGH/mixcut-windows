@@ -425,6 +425,63 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         SaveContext();
     }
 
+    /// <summary>
+    /// 在方案的指定位置插入一个新分镜（position 从 1 开始；position=count+1 = 尾部追加）。
+    /// 返回 false 表示方案已包含该分镜（拒绝重复插入，保留 UI 简化态）；true = 成功落库。
+    /// 调用方负责刷新 UI（InsertSegment 不主动 LoadSchemes）。
+    /// </summary>
+    public bool InsertSegment(Segment segment, int position, MixScheme scheme)
+    {
+        if (_context is null)
+        {
+            return false;
+        }
+
+        // 重复校验：方案已含该分镜 → 拒绝
+        if (SchemeContainsSegment(scheme, segment))
+        {
+            return false;
+        }
+
+        // 拿 db 上下文追踪的 scheme + segment（避免插入断开实体导致 EF 异常）
+        var trackedScheme = _context.Schemes
+            .Include(s => s.SchemeSegments)
+            .FirstOrDefault(s => s.Id == scheme.Id);
+        if (trackedScheme is null)
+        {
+            return false;
+        }
+        var trackedSegment = _context.Segments.FirstOrDefault(s => s.Id == segment.Id);
+        if (trackedSegment is null)
+        {
+            return false;
+        }
+
+        var clampedPos = Math.Clamp(position, 1, trackedScheme.SchemeSegments.Count + 1);
+
+        // 后续位置整体后移 1
+        foreach (var ss in trackedScheme.SchemeSegments)
+        {
+            if (ss.Position >= clampedPos)
+            {
+                ss.Position++;
+            }
+        }
+
+        _context.SchemeSegments.Add(new SchemeSegment
+        {
+            Position = clampedPos,
+            Reasoning = string.Empty,
+            PositionReasoning = string.Empty,
+            Scheme = trackedScheme,
+            Segment = trackedSegment,
+        });
+
+        MarkAsEdited(trackedScheme);
+        SaveContext();
+        return true;
+    }
+
     /// <summary>从方案中移除一个分镜。</summary>
     public void RemoveSegment(SchemeSegment schemeSeg, MixScheme scheme)
     {
