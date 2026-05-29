@@ -448,6 +448,38 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         SaveContext();
     }
 
+    // ---- v0.3.0 手动编辑工具方法 ----
+
+    /// <summary>
+    /// 把 AI 方案标记为「已修改」（自定义组合策略下的方案跳过 —— 用户创建的本就是手动的）。
+    /// UI 层据此渲染方案名后缀「·已修改」灰字。
+    /// </summary>
+    private void MarkAsEdited(MixScheme scheme)
+    {
+        if (scheme.Strategy?.IsCustomGroup == true)
+        {
+            return;
+        }
+        if (!scheme.IsManuallyEdited)
+        {
+            scheme.IsManuallyEdited = true;
+        }
+    }
+
+    /// <summary>判断方案是否已包含指定分镜（按 SegmentId）。用于 Insert/Replace 的重复校验。</summary>
+    private static bool SchemeContainsSegment(MixScheme scheme, Segment segment) =>
+        scheme.SchemeSegments.Any(ss => ss.SegmentId == segment.Id);
+
+    /// <summary>按当前顺序重排 Position 字段为 1-N 连续。Insert/Remove 后必须调用。</summary>
+    private static void RenumberPositions(MixScheme scheme)
+    {
+        var ordered = scheme.OrderedSegments.ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            ordered[i].Position = i + 1;
+        }
+    }
+
     private void SaveContext()
     {
         try
