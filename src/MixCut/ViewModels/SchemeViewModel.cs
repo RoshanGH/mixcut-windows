@@ -525,12 +525,21 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         return true;
     }
 
-    /// <summary>从方案中移除一个分镜。</summary>
-    public void RemoveSegment(SchemeSegment schemeSeg, MixScheme scheme)
+    /// <summary>
+    /// 从方案中移除一个分镜。
+    /// 返回 false 表示方案至少需保留 1 条分镜（拒绝删除，UI 应弹 Toast 提示）；true = 成功删除。
+    /// </summary>
+    public bool RemoveSegment(SchemeSegment schemeSeg, MixScheme scheme)
     {
         if (_context is null)
         {
-            return;
+            return false;
+        }
+
+        // 至少保留 1 条兜底（对齐 Mac removeSegment 行为）
+        if (scheme.SchemeSegments.Count <= 1)
+        {
+            return false;
         }
 
         var deletedId = schemeSeg.Id;
@@ -540,12 +549,20 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
             _context.SchemeSegments.Remove(tracked);
         }
 
+        // 删完后 1-N 连续重排
         var remaining = scheme.OrderedSegments.Where(ss => ss.Id != deletedId).ToList();
         for (var i = 0; i < remaining.Count; i++)
         {
             remaining[i].Position = i + 1;
         }
+
+        var trackedScheme = _context.Schemes.FirstOrDefault(s => s.Id == scheme.Id);
+        if (trackedScheme is not null)
+        {
+            MarkAsEdited(trackedScheme);
+        }
         SaveContext();
+        return true;
     }
 
     // ---- v0.3.0 手动编辑工具方法 ----

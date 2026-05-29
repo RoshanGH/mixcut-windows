@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using MixCut.Models;
 using MixCut.ViewModels;
+using MixCut.Views.Shared;
 
 namespace MixCut.Views;
 
@@ -862,7 +863,11 @@ public partial class SchemesView : UserControl, IProjectView
         {
             if (_vm.SelectedScheme is { } scheme)
             {
-                _vm.RemoveSegment(schemeSeg, scheme);
+                if (!_vm.RemoveSegment(schemeSeg, scheme))
+                {
+                    ToastCenter.Shared.Show("方案至少保留 1 个分镜", ToastStyle.Warning);
+                    return;
+                }
                 RefreshDetail();
             }
         };
