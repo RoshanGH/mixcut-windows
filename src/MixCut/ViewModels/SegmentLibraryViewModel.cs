@@ -68,6 +68,14 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
     /// <summary>已选分镜 ID 集合（HashSet 包在 ObservableObject 之外，UI 通过显式 OnPropertyChanged 通知）。</summary>
     public HashSet<Guid> SelectedSegmentIds { get; } = new();
 
+    /// <summary>
+    /// 勾选顺序记录（v0.3.2 对齐 Mac c9a1e4e）。
+    /// SelectedSegmentIds 是查找用的 HashSet，这里是用户实际勾选的先后顺序。
+    /// 自定义组合场景必须保持勾选顺序，而批量导出场景仍用按视频+StartTime 排序的 SelectedSegments。
+    /// 不变量：_selectionOrder 与 SelectedSegmentIds 始终同步（任一改动都要带上对方的改动）。
+    /// </summary>
+    private readonly List<Guid> _selectionOrder = new();
+
     /// <summary>选中数量变化通知（视图层 binding 不到 HashSet，用事件兜底刷新统计）。</summary>
     public event Action? SelectionChanged;
 
@@ -86,32 +94,55 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
     {
         if (!SelectedSegmentIds.Add(segment.Id))
         {
+            // 已选 → 取消勾选
             SelectedSegmentIds.Remove(segment.Id);
+            _selectionOrder.Remove(segment.Id);
+        }
+        else
+        {
+            // 新增勾选 → 追加到顺序末尾
+            _selectionOrder.Add(segment.Id);
         }
         SelectionChanged?.Invoke();
     }
 
-    /// <summary>全选当前筛选后可见的所有分镜。</summary>
+    /// <summary>全选当前筛选后可见的所有分镜（按 FilteredSegments 当前显示顺序）。</summary>
     public void SelectAllVisible()
     {
         SelectedSegmentIds.Clear();
-        foreach (var s in FilteredSegments) SelectedSegmentIds.Add(s.Id);
+        _selectionOrder.Clear();
+        foreach (var s in FilteredSegments)
+        {
+            if (SelectedSegmentIds.Add(s.Id))
+            {
+                _selectionOrder.Add(s.Id);
+            }
+        }
         SelectionChanged?.Invoke();
     }
 
-    /// <summary>反选（针对当前筛选后可见的所有分镜）。</summary>
+    /// <summary>反选（针对当前筛选后可见的所有分镜）。新增的按 FilteredSegments 当前顺序追加。</summary>
     public void InvertSelectionVisible()
     {
-        var visible = FilteredSegments.Select(s => s.Id).ToHashSet();
-        var newSelection = visible.Except(SelectedSegmentIds).ToList();
+        var visibleOrdered = FilteredSegments.Select(s => s.Id).ToList();
+        var newSelectionSet = visibleOrdered.Where(id => !SelectedSegmentIds.Contains(id)).ToHashSet();
         SelectedSegmentIds.Clear();
-        foreach (var id in newSelection) SelectedSegmentIds.Add(id);
+        _selectionOrder.Clear();
+        foreach (var id in visibleOrdered)
+        {
+            if (newSelectionSet.Contains(id))
+            {
+                SelectedSegmentIds.Add(id);
+                _selectionOrder.Add(id);
+            }
+        }
         SelectionChanged?.Invoke();
     }
 
     public void ClearSelection()
     {
         SelectedSegmentIds.Clear();
+        _selectionOrder.Clear();
         SelectionChanged?.Invoke();
     }
 
@@ -134,6 +165,25 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
                 .ToList();
         }
     }
+
+    /// <summary>
+    /// 已选分镜，按用户勾选先后顺序（v0.3.2 对齐 Mac c9a1e4e）。
+    /// 供「✨ 组合为方案」场景使用 —— SelectedSegments 是按视频+StartTime 排序的版本，给批量导出用。
+    /// </summary>
+    public IReadOnlyList<Segment> SelectedSegmentsInOrder
+    {
+        get
+        {
+            var segById = _segments.ToDictionary(s => s.Id);
+            return _selectionOrder
+                .Where(id => segById.ContainsKey(id))
+                .Select(id => segById[id])
+                .ToList();
+        }
+    }
+
+    /// <summary>当前显示的项目（LoadSegments 时设置；供 View 取项目句柄用）。</summary>
+    public Project? CurrentProject { get; private set; }
 
     private readonly Services.VideoProcessing.FFmpegRunner? _ffmpeg;
 
@@ -212,6 +262,7 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
     {
         _context?.Dispose();
         _context = _dbFactory.CreateDbContext();
+        CurrentProject = project;
 
         var projectId = project.Id;
         var segs = _context.Segments
@@ -285,6 +336,7 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         }
         _segments.RemoveAll(s => idsToDelete.Contains(s.Id));
         SelectedSegmentIds.Clear();
+        _selectionOrder.Clear();
         SelectionChanged?.Invoke();
         RecomputeNumberByVideo();
         ApplyFilter();
