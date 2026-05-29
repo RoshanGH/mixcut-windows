@@ -141,6 +141,14 @@ public partial class App : Application
             EnsureCustomGroupStrategy(db, settingsForMigration, loggerForMigration);
         }
 
+        // v0.3.1 对齐迁移：把已有分镜缩略图全部重生为「首帧」（用户升级 v0.6.0 后第一次启动自动跑一次）
+        // fire-and-forget，不阻塞 UI 启动；用 AppSettings flag 防重，失败不阻断启动。
+        _ = Task.Run(async () => await RegenerateSegmentThumbnailsToFirstFrameAsync(
+            _host.Services.GetRequiredService<IDbContextFactory<MixCutDbContext>>(),
+            _host.Services.GetRequiredService<FFmpegRunner>(),
+            _host.Services.GetRequiredService<AppSettings>(),
+            _host.Services.GetRequiredService<ILogger<App>>()));
+
         var window = _host.Services.GetRequiredService<MainWindow>();
         window.Show();
         // 把全局 Toast Overlay 附到主窗口（之后任何代码可以 ToastCenter.Shared.Show(...)）。
@@ -283,6 +291,82 @@ public partial class App : Application
         catch (Exception ex)
         {
             logger.LogError(ex, "[CustomGroupMigration] 迁移失败（不阻断启动）");
+        }
+    }
+
+    /// <summary>
+    /// 把已有分镜缩略图全部重生为「首帧」（v0.3.1 对齐 Mac regenerateSegmentThumbnailsToFirstFrame）。
+    /// 用 AppSettings.DidRegenerateSegmentThumbnailsToFirstFrameV1 防重；并发 fire-and-forget 不阻塞 UI；
+    /// 单个 segment 失败不阻断整体（用户后续手动操作触发 RepairMissingThumbnailsAsync 兜底）。
+    /// </summary>
+    private static async Task RegenerateSegmentThumbnailsToFirstFrameAsync(
+        IDbContextFactory<MixCutDbContext> dbFactory,
+        FFmpegRunner ffmpeg,
+        AppSettings settings,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        if (settings.DidRegenerateSegmentThumbnailsToFirstFrameV1)
+        {
+            return;
+        }
+
+        try
+        {
+            using var db = dbFactory.CreateDbContext();
+            var segments = await db.Segments
+                .Include(s => s.Video)
+                .ToListAsync();
+
+            var total = segments.Count;
+            if (total == 0)
+            {
+                settings.DidRegenerateSegmentThumbnailsToFirstFrameV1 = true;
+                logger.LogInformation("[ThumbMigration] 无分镜需要迁移（新用户）");
+                return;
+            }
+
+            var thumbDir = Path.Combine(AppPaths.Root, "Thumbnails");
+            Directory.CreateDirectory(thumbDir);
+
+            var regenerated = 0;
+            var sem = new System.Threading.SemaphoreSlim(Math.Max(2, Environment.ProcessorCount / 2));
+            var tasks = segments
+                .Where(s => s.Video is not null && File.Exists(s.Video.LocalPath))
+                .Select(async s =>
+                {
+                    await sem.WaitAsync();
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(s.ThumbnailPath) && File.Exists(s.ThumbnailPath))
+                        {
+                            try { File.Delete(s.ThumbnailPath); } catch { /* 已被占用等情况忽略 */ }
+                        }
+                        var firstFrameTime = Math.Max(0, s.StartTime + 0.1);
+                        var outPath = Path.Combine(thumbDir, $"seg_{s.Id}.jpg");
+                        await ffmpeg.GenerateThumbnailAsync(s.Video!.LocalPath, outPath, firstFrameTime);
+                        s.ThumbnailPath = outPath;
+                        System.Threading.Interlocked.Increment(ref regenerated);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "[ThumbMigration] 单分镜失败 id={Id}", s.Id);
+                    }
+                    finally
+                    {
+                        sem.Release();
+                    }
+                });
+
+            await Task.WhenAll(tasks);
+            await db.SaveChangesAsync();
+            Infrastructure.ThumbnailCache.Shared.Clear();
+            logger.LogInformation("[ThumbMigration] 重生完成: {Done}/{Total}", regenerated, total);
+
+            settings.DidRegenerateSegmentThumbnailsToFirstFrameV1 = true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[ThumbMigration] 迁移失败（不阻断启动）");
         }
     }
 
