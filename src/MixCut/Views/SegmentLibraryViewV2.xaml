@@ -12,7 +12,8 @@
     <UserControl.Resources>
         <sys:Double x:Key="SegmentCardWidth">210</sys:Double>
         <sys:Double x:Key="SegmentCardHeight">500</sys:Double>
-        <sys:Double x:Key="SegmentCardThumbWidth">194</sys:Double>
+        <!-- 9:16 手机端竖屏比例（信息流广告投放规格），152×270 -->
+        <sys:Double x:Key="SegmentCardThumbWidth">152</sys:Double>
         <sys:Double x:Key="SegmentCardThumbHeight">270</sys:Double>
     </UserControl.Resources>
 

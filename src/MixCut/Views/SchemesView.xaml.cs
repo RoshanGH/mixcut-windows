@@ -917,11 +917,10 @@ public partial class SchemesView : UserControl, IProjectView
             return border;
         }
 
-        var aspect = seg.Video is { Width: > 0, Height: > 0 } v
-            ? (double)v.Width / v.Height
-            : 9.0 / 16.0;
-        const double thumbMaxHeight = 240;
-        var thumbHeight = Math.Min(thumbMaxHeight, cardWidth / aspect);
+        // v0.3.0 对齐 Mac：所有视频显示容器统一 9:16 手机端竖屏比例（信息流广告投放规格）。
+        // 不再用视频原始比例 —— 视频原本是横屏的会被 UniformToFill 裁剪填充，符合广告投放规范。
+        const double thumbAspect = 9.0 / 16.0;
+        var thumbHeight = cardWidth / thumbAspect;
 
         var sp = new StackPanel();
 

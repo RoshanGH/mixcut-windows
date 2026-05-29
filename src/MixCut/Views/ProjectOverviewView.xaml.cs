@@ -65,16 +65,12 @@ public partial class ProjectOverviewView : UserControl, IProjectView
         VideoGrid.Children.Clear();
         foreach (var video in project.Videos)
         {
-            // 按视频实际宽高比决定卡片尺寸（对齐 macOS 版）。
-            var aspect = video.Width > 0 && video.Height > 0
-                ? (double)video.Width / video.Height
-                : 16.0 / 9.0;
-
-            const double targetPlayerHeight = 220;
-            const double minPlayerWidth = 140;
-            const double maxPlayerWidth = 380;
-            double playerWidth = Math.Clamp(targetPlayerHeight * aspect, minPlayerWidth, maxPlayerWidth);
-            double playerHeight = playerWidth / aspect;
+            // v0.3.0 对齐 Mac：所有视频显示容器统一 9:16 手机端竖屏比例（信息流广告投放规格）。
+            // 视频原始横屏 → UniformToFill 裁剪填充；用户看到的就是投放规格。
+            const double thumbAspect = 9.0 / 16.0;
+            const double targetPlayerHeight = 280;
+            double playerHeight = targetPlayerHeight;
+            double playerWidth = playerHeight * thumbAspect;
 
             var card = new Border
             {
