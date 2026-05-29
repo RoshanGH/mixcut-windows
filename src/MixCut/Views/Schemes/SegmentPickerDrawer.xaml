@@ -1,0 +1,59 @@
+<UserControl x:Class="MixCut.Views.Schemes.SegmentPickerDrawer"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="clr-namespace:MixCut.Views.Shared"
+             Width="320" Background="#16161A"
+             x:Name="DrawerRoot">
+    <!--
+        右侧分镜选择抽屉（场景 B）。320px 宽，深色背景，显示当前项目所有分镜的 9:16 网格。
+        DataContext 自指向 DrawerRoot（让 Items / HeaderText / StatsText 走 DependencyProperty）。
+        宿主通过 SegmentPicked / CloseRequested 事件接入 SchemeViewModel。
+    -->
+    <Grid DataContext="{Binding ElementName=DrawerRoot}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 头部：标题 + ✕ 关闭 -->
+        <Grid Grid.Row="0" Margin="14,12,14,8">
+            <TextBlock Text="{Binding HeaderText}" Foreground="White" FontSize="14" FontWeight="SemiBold"/>
+            <Button Content="✕" Click="OnCloseClick"
+                    HorizontalAlignment="Right" Background="Transparent" Foreground="#B0B0B0"
+                    BorderThickness="0" Padding="6,2" Cursor="Hand"
+                    ToolTip="关闭"/>
+        </Grid>
+
+        <!-- 统计行 -->
+        <TextBlock Grid.Row="1" Text="{Binding StatsText}" Foreground="#909090" FontSize="11"
+                   Margin="14,0,14,8"/>
+
+        <!-- 卡片 WrapPanel，垂直滚动 -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <!--
+                            置灰态：IsAlreadyInScheme=true → Button 禁用，遮罩在卡片内显示。
+                            点击可用卡片走 OnSegmentClick → SegmentPicked 事件。
+                        -->
+                        <Button Margin="6" Padding="0" Background="Transparent" BorderThickness="0"
+                                Cursor="Hand" Click="OnSegmentClick" Tag="{Binding}"
+                                IsEnabled="{Binding IsAlreadyInScheme, Converter={StaticResource InverseBool}}"
+                                ToolTipService.ShowOnDisabled="True"
+                                ToolTip="点击插入到方案">
+                            <shared:SegmentCardCompact/>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
