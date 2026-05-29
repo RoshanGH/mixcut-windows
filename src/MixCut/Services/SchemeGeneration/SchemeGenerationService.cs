@@ -259,4 +259,52 @@ public sealed class SchemeGenerationService
 
     private static string F0(double v) => v.ToString("F0", CultureInfo.InvariantCulture);
     private static string F1(double v) => v.ToString("F1", CultureInfo.InvariantCulture);
+
+    // ---- v0.3.0：自定义方案 AI 反推 ----
+
+    /// <summary>
+    /// 根据用户手动选择的分镜反推方案元信息。失败返回 null（让调用方落默认元信息 + Toast 提示），
+    /// 不抛错阻断 —— 用户已经手动挑了分镜，方案落库不能因为 AI 失败丢失。
+    /// 内部 30 秒超时兜底防 hang。
+    /// </summary>
+    public async Task<CustomSchemeMetadata?> InferMetadataAsync(
+        IReadOnlyList<Segment> orderedSegments,
+        CancellationToken cancellationToken = default)
+    {
+        if (orderedSegments.Count == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var template = _promptLoader.LoadPrompt("custom_scheme_inference")
+                ?? throw new InvalidOperationException("custom_scheme_inference prompt 未加载");
+
+            var segmentsData = orderedSegments.Select((seg, idx) => new
+            {
+                position = idx + 1,
+                semanticTypes = seg.SemanticTypes.Select(t => t.ToLabel()).ToArray(),
+                text = seg.Text ?? string.Empty,
+                duration = Math.Round(seg.Duration, 1),
+            }).ToArray();
+            var segmentsJson = System.Text.Json.JsonSerializer.Serialize(segmentsData);
+            var prompt = template.Replace("{{SEGMENTS_JSON}}", segmentsJson);
+
+            // 30 秒超时兜底（防止 AI 提供商网络 hang），与外部 cancellationToken 联动
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+            var provider = _providerManager.CurrentProvider();
+            var meta = await provider.GenerateJsonAsync<CustomSchemeMetadata>(prompt, cts.Token);
+            _logger.LogInformation("[CustomSchemeInference] 反推完成: name={Name} style={Style}",
+                meta?.Name, meta?.Style);
+            return meta;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[CustomSchemeInference] 反推失败，调用方将落默认元信息");
+            return null;
+        }
+    }
 }
