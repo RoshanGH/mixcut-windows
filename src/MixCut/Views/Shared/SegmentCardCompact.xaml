@@ -1,0 +1,63 @@
+<UserControl x:Class="MixCut.Views.Shared.SegmentCardCompact"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="120" Height="240"
+             Background="Transparent">
+    <!--
+        紧凑分镜卡片 (120×240)。9:16 缩略图 (120×213) + 文字信息条 (剩余高度)。
+        供 SegmentPickerDrawer / 未来 ArrangeOrderSheet 复用。
+        数据契约：DataContext = SegmentPickerItem，必含 ThumbnailImage / IsAlreadyInScheme /
+        DurationLabel / SemanticTypeLabels / Text。
+    -->
+    <Border CornerRadius="8" Background="#1F1F22" ClipToBounds="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <!-- 9:16 缩略图区，120×213 -->
+                <RowDefinition Height="213"/>
+                <!-- 文字信息条 -->
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- 9:16 缩略图：UniformToFill 裁剪填充 -->
+            <Image Grid.Row="0" Source="{Binding ThumbnailImage}" Stretch="UniformToFill"/>
+
+            <!-- 「已在方案中」半透明遮罩 + 🚫 角标 -->
+            <Border Grid.Row="0" Background="#A6000000"
+                    Visibility="{Binding IsAlreadyInScheme, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="🚫" Foreground="White" FontSize="22"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="已在方案中" Foreground="White" FontSize="11"
+                               HorizontalAlignment="Center" Margin="0,4,0,0"
+                               ToolTip="该分镜已在方案中"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 右上时长 chip -->
+            <Border Grid.Row="0" Background="#80000000" CornerRadius="4"
+                    Padding="4,2" Margin="6"
+                    HorizontalAlignment="Right" VerticalAlignment="Top">
+                <TextBlock Text="{Binding DurationLabel}" Foreground="White" FontSize="10"/>
+            </Border>
+
+            <!-- 底部文字条：语义标签 + 台词预览 -->
+            <StackPanel Grid.Row="1" Margin="6,4">
+                <ItemsControl ItemsSource="{Binding SemanticTypeLabels}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#2D2D33" CornerRadius="3" Padding="4,1" Margin="0,0,3,3">
+                                <TextBlock Text="{Binding}" Foreground="#DCDCDC" FontSize="9"/>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding Text}" Foreground="#B0B0B0" FontSize="10"
+                           TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis"
+                           Margin="0,2,0,0"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>
