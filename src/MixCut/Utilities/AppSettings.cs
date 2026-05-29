@@ -172,4 +172,27 @@ public sealed class AppSettings
         get => int.TryParse(Get("last_nav_item"), out var i) ? Math.Clamp(i, 0, 4) : 0;
         set => Set("last_nav_item", value.ToString());
     }
+
+    // ---- 迁移持久化 flag（v0.6.0 对齐 Mac v0.3.x） ----
+
+    /// <summary>是否已为老项目补建「自定义组合」策略（Mac v0.3.0 对齐迁移）。</summary>
+    public bool DidEnsureCustomGroupStrategyV1
+    {
+        get => string.Equals(Get("did_ensure_custom_group_strategy_v1"), "true", StringComparison.OrdinalIgnoreCase);
+        set => Set("did_ensure_custom_group_strategy_v1", value ? "true" : null);
+    }
+
+    /// <summary>是否已把分镜缩略图迁移到「首帧」（Mac v0.3.1 对齐迁移）。</summary>
+    public bool DidRegenerateSegmentThumbnailsToFirstFrameV1
+    {
+        get => string.Equals(Get("did_regenerate_segment_thumbnails_to_first_frame_v1"), "true", StringComparison.OrdinalIgnoreCase);
+        set => Set("did_regenerate_segment_thumbnails_to_first_frame_v1", value ? "true" : null);
+    }
+
+    /// <summary>用户已点 ✕ 屏蔽提示的新版本号（如 "0.6.0"）。下次启动若远端版本相同则不再 banner。</summary>
+    public string? DismissedUpdateVersion
+    {
+        get => Get("dismissed_update_version");
+        set => Set("dismissed_update_version", string.IsNullOrEmpty(value) ? null : value);
+    }
 }
