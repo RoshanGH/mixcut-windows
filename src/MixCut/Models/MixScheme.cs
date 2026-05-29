@@ -27,6 +27,12 @@ public class MixScheme
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
+    /// <summary>
+    /// true = AI 生成的方案被用户手动改过分镜（插入/替换/删除）。
+    /// 自定义组合策略下的方案此字段不使用（用户创建的就是手动的）。
+    /// </summary>
+    public bool IsManuallyEdited { get; set; } = false;
+
     // ---- 导航属性 ----
 
     public Guid? StrategyId { get; set; }
