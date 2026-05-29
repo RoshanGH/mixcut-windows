@@ -1,6 +1,7 @@
 <UserControl x:Class="MixCut.Views.SchemesView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:schemes="clr-namespace:MixCut.Views.Schemes"
              Background="White">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -62,20 +63,32 @@
 
         <Border Grid.Column="1" Background="#EEE" />
 
-        <!-- 右：方案详情 -->
+        <!-- 右：方案详情 + drawer overlay -->
         <Grid Grid.Column="2">
-            <StackPanel x:Name="EmptyDetail" VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="Visible">
-                <TextBlock Text="📋" FontSize="40" Foreground="#CCC"
-                           HorizontalAlignment="Center" Margin="0,0,0,8" />
-                <TextBlock Text="选择一个方案查看详情" Foreground="#888" FontSize="12"
-                           HorizontalAlignment="Center" />
-            </StackPanel>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-            <ScrollViewer x:Name="DetailScroller" VerticalScrollBarVisibility="Auto"
-                          Visibility="Collapsed">
-                <StackPanel x:Name="DetailPanel" Margin="24" />
-            </ScrollViewer>
+            <!-- 原 EmptyDetail / DetailScroller 全部放到 Column=0 -->
+            <Grid Grid.Column="0">
+                <StackPanel x:Name="EmptyDetail" VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="Visible">
+                    <TextBlock Text="📋" FontSize="40" Foreground="#CCC"
+                               HorizontalAlignment="Center" Margin="0,0,0,8" />
+                    <TextBlock Text="选择一个方案查看详情" Foreground="#888" FontSize="12"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <ScrollViewer x:Name="DetailScroller" VerticalScrollBarVisibility="Auto"
+                              Visibility="Collapsed">
+                    <StackPanel x:Name="DetailPanel" Margin="24" />
+                </ScrollViewer>
+            </Grid>
+
+            <!-- Phase 4b：分镜选择抽屉（右侧 320px，默认 Collapsed） -->
+            <schemes:SegmentPickerDrawer Grid.Column="1" x:Name="PickerDrawer"
+                                         Visibility="Collapsed"/>
         </Grid>
     </Grid>
 </UserControl>

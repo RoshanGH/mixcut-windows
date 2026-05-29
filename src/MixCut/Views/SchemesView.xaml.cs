@@ -19,6 +19,19 @@ public partial class SchemesView : UserControl, IProjectView
     private Project? _project;
     private readonly HashSet<Guid> _expandedStrategies = new();
 
+    // Phase 4b 场景 B drawer 状态
+    private System.Collections.ObjectModel.ObservableCollection<ViewModels.Cards.SegmentPickerItem>? _pickerItems;
+    private DrawerIntent _drawerIntent = DrawerIntent.None;
+    private int _drawerInsertPosition;
+    private SchemeSegment? _drawerReplaceTarget;
+
+    private enum DrawerIntent
+    {
+        None,
+        Insert,  // _drawerInsertPosition 有效
+        Replace, // _drawerReplaceTarget 有效
+    }
+
     public SchemesView(SchemeViewModel vm)
         : this(vm, null) { }
 
@@ -28,6 +41,12 @@ public partial class SchemesView : UserControl, IProjectView
         _segmentVm = segmentVm;
         InitializeComponent();
         _vm.PropertyChanged += OnVmChanged;
+
+        // Phase 4b：分镜选择抽屉事件 + 数据源
+        PickerDrawer.SegmentPicked += OnDrawerSegmentPicked;
+        PickerDrawer.CloseRequested += OnDrawerCloseRequested;
+        _pickerItems = new System.Collections.ObjectModel.ObservableCollection<ViewModels.Cards.SegmentPickerItem>();
+        PickerDrawer.Items = _pickerItems;
     }
 
     public void LoadProject(Project project)
@@ -649,9 +668,14 @@ public partial class SchemesView : UserControl, IProjectView
         var pos = 1;
         foreach (var schemeSeg in ordered)
         {
+            // Phase 4b：每个分镜前插一个行间 ⊕（hover 显示，插入位置 = 当前分镜的 position）
+            storyboardPanel.Children.Add(BuildInsertGapAt(pos));
             storyboardPanel.Children.Add(BuildStoryboardCard(pos, schemeSeg));
             pos++;
         }
+        // 尾部追加位置（position = count + 1）
+        storyboardPanel.Children.Add(BuildInsertGapAt(pos));
+
         storyboardScroller.Content = storyboardPanel;
         DetailPanel.Children.Add(storyboardScroller);
 
@@ -702,6 +726,46 @@ public partial class SchemesView : UserControl, IProjectView
             {
                 Text = text, FontSize = 11, Foreground = new SolidColorBrush(Color.FromRgb(0x44, 0x44, 0x44)),
             },
+        };
+    }
+
+    /// <summary>
+    /// 在 storyboard 横向序列中插入一个行间 ⊕ 按钮。
+    /// hover 时 12→28px 浮出（CSS-like），点击弹出右侧抽屉以「在 position 处插入分镜」意图。
+    /// </summary>
+    private UIElement BuildInsertGapAt(int position)
+    {
+        var btn = new Schemes.InsertGapButton
+        {
+            InsertPosition = position,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        btn.Clicked += OnInsertGapClicked;
+        return btn;
+    }
+
+    private void OnInsertGapClicked(object? sender, int position)
+    {
+        if (_vm.SelectedScheme is not { } scheme || _project is null)
+        {
+            return;
+        }
+        OpenPickerForInsert(scheme, position);
+    }
+
+    private static Button MakeCircleButton(string content, string tooltip)
+    {
+        return new Button
+        {
+            Content = content,
+            Width = 28, Height = 28,
+            Background = new SolidColorBrush(Color.FromArgb(0xA6, 0, 0, 0)),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(0, 0, 4, 0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            ToolTip = tooltip,
+            FontSize = 12,
         };
     }
 
@@ -856,8 +920,57 @@ public partial class SchemesView : UserControl, IProjectView
 
         border.Child = sp;
 
-        // 右键菜单：从方案中移除（对齐 Mac StoryboardCard.contextMenu）
+        // Phase 4b：hover 浮出的替换/删除按钮（右上角圆形 28x28）
+        // 叠加到 thumbGrid（thumb 区域）— thumbBorder.Child 已是 thumbGrid，仍可 Children.Add
+        var hoverButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 6, 6, 0),
+            Visibility = Visibility.Collapsed,
+        };
+        var replaceBtn = MakeCircleButton("🔁", "替换为其它分镜");
+        replaceBtn.Click += (_, _) =>
+        {
+            if (_vm.SelectedScheme is { } sch)
+            {
+                OpenPickerForReplace(sch, schemeSeg);
+            }
+        };
+        var deleteBtn = MakeCircleButton("🗑", "从方案中删除");
+        deleteBtn.Click += (_, _) =>
+        {
+            if (_vm.SelectedScheme is { } sch)
+            {
+                if (!_vm.RemoveSegment(schemeSeg, sch))
+                {
+                    ToastCenter.Shared.Show("方案至少保留 1 个分镜", ToastStyle.Warning);
+                    return;
+                }
+                RefreshDetail();
+            }
+        };
+        hoverButtons.Children.Add(replaceBtn);
+        hoverButtons.Children.Add(deleteBtn);
+        thumbGrid.Children.Add(hoverButtons);
+
+        // hover 显示/隐藏（覆盖整个卡片范围）
+        border.MouseEnter += (_, _) => hoverButtons.Visibility = Visibility.Visible;
+        border.MouseLeave += (_, _) => hoverButtons.Visibility = Visibility.Collapsed;
+
+        // 右键菜单：替换为... + 从方案中移除（对齐 Mac StoryboardCard.contextMenu）
         var menu = new ContextMenu();
+        var replaceMenuItem = new MenuItem { Header = "替换为..." };
+        replaceMenuItem.Click += (_, _) =>
+        {
+            if (_vm.SelectedScheme is { } sch)
+            {
+                OpenPickerForReplace(sch, schemeSeg);
+            }
+        };
+        menu.Items.Add(replaceMenuItem);
+
         var removeItem = new MenuItem { Header = "从方案中移除" };
         removeItem.Click += (_, _) =>
         {
@@ -937,6 +1050,142 @@ public partial class SchemesView : UserControl, IProjectView
         row.Children.Add(outPlus);
 
         return row;
+    }
+
+    // ---- Phase 4b：分镜选择抽屉控制 ----
+
+    private void OpenPickerForInsert(MixScheme scheme, int position)
+    {
+        _drawerIntent = DrawerIntent.Insert;
+        _drawerInsertPosition = position;
+        _drawerReplaceTarget = null;
+        PickerDrawer.HeaderText = $"选择分镜插入到位置 {position}";
+        PopulatePickerItems(scheme);
+        PickerDrawer.Visibility = Visibility.Visible;
+    }
+
+    private void OpenPickerForReplace(MixScheme scheme, SchemeSegment target)
+    {
+        _drawerIntent = DrawerIntent.Replace;
+        _drawerInsertPosition = 0;
+        _drawerReplaceTarget = target;
+        PickerDrawer.HeaderText = "选择新分镜替换";
+        PopulatePickerItems(scheme);
+        PickerDrawer.Visibility = Visibility.Visible;
+    }
+
+    private void PopulatePickerItems(MixScheme scheme)
+    {
+        if (_pickerItems is null || _project is null) return;
+        _pickerItems.Clear();
+
+        // 收集项目所有分镜（来自 _segmentVm 优先，没有就走 _project.ProjectVideos）
+        var allSegments = new List<Segment>();
+        if (_project.ProjectVideos is { } pvs)
+        {
+            foreach (var pv in pvs)
+            {
+                if (pv.Video?.Segments is { } segs)
+                {
+                    allSegments.AddRange(segs);
+                }
+            }
+        }
+
+        var inSchemeIds = new HashSet<Guid>(scheme.SchemeSegments
+            .Where(ss => ss.SegmentId is not null)
+            .Select(ss => ss.SegmentId!.Value));
+
+        var totalCount = allSegments.Count;
+        var alreadyCount = 0;
+
+        foreach (var seg in allSegments)
+        {
+            var alreadyIn = inSchemeIds.Contains(seg.Id);
+            if (alreadyIn) alreadyCount++;
+            var item = new ViewModels.Cards.SegmentPickerItem(seg, alreadyIn)
+            {
+                ThumbnailImage = LoadThumbBitmapStatic(seg.ThumbnailPath),
+            };
+            _pickerItems.Add(item);
+        }
+
+        PickerDrawer.StatsText = $"共 {totalCount} 个分镜 · 已在方案 {alreadyCount} 个";
+    }
+
+    private static System.Windows.Media.Imaging.BitmapImage? LoadThumbBitmapStatic(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+        // 借用 ThumbnailCache（已经返回 ImageSource，需要 cast 或重新加载）
+        // 简化：直接从文件流构造（drawer 一次性加载所有缩略图，不耗内存）
+        try
+        {
+            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(path, UriKind.Absolute);
+            bmp.DecodePixelWidth = 120;
+            bmp.EndInit();
+            bmp.Freeze();
+            return bmp;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void OnDrawerSegmentPicked(object? sender, Segment segment)
+    {
+        if (_vm.SelectedScheme is not { } scheme) return;
+
+        switch (_drawerIntent)
+        {
+            case DrawerIntent.Insert:
+                if (_vm.InsertSegment(segment, _drawerInsertPosition, scheme))
+                {
+                    ToastCenter.Shared.Show($"已插入「{TrimText(segment.Text, 15)}」", ToastStyle.Success);
+                    RefreshDetail();
+                    // 抽屉保持打开供连续操作；刷新已在方案项的置灰态
+                    PopulatePickerItems(scheme);
+                }
+                else
+                {
+                    ToastCenter.Shared.Show("无法插入：分镜已在方案中", ToastStyle.Warning);
+                }
+                break;
+            case DrawerIntent.Replace:
+                if (_drawerReplaceTarget is { } target)
+                {
+                    if (_vm.ReplaceSegment(target, segment, scheme))
+                    {
+                        ToastCenter.Shared.Show("已替换", ToastStyle.Success);
+                        RefreshDetail();
+                        CloseDrawer();
+                    }
+                    else
+                    {
+                        ToastCenter.Shared.Show("替换失败：新分镜已在方案中", ToastStyle.Warning);
+                    }
+                }
+                break;
+        }
+    }
+
+    private void OnDrawerCloseRequested(object? sender, EventArgs e) => CloseDrawer();
+
+    private void CloseDrawer()
+    {
+        PickerDrawer.Visibility = Visibility.Collapsed;
+        _drawerIntent = DrawerIntent.None;
+        _drawerInsertPosition = 0;
+        _drawerReplaceTarget = null;
+    }
+
+    private static string TrimText(string? text, int max)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= max ? text : text.Substring(0, max) + "…";
     }
 
     private static System.Windows.Media.ImageSource? LoadThumbStatic(string? path) =>
