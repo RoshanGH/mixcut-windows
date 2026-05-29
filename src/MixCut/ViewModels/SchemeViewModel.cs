@@ -482,6 +482,49 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         return true;
     }
 
+    /// <summary>
+    /// 把指定 SchemeSegment 替换为新分镜（保留原 Position）。
+    /// 返回 false 表示新分镜已在方案中（拒绝重复替换 —— 同一分镜自替换不算重复）；true = 成功。
+    /// </summary>
+    public bool ReplaceSegment(SchemeSegment schemeSeg, Segment newSegment, MixScheme scheme)
+    {
+        if (_context is null)
+        {
+            return false;
+        }
+
+        // 重复校验：方案中已有该分镜，且不是被替换的这一条 → 拒绝（避免出现重复）
+        if (scheme.SchemeSegments.Any(ss => ss.SegmentId == newSegment.Id && ss.Id != schemeSeg.Id))
+        {
+            return false;
+        }
+
+        var tracked = _context.SchemeSegments.FirstOrDefault(ss => ss.Id == schemeSeg.Id);
+        if (tracked is null)
+        {
+            return false;
+        }
+        var trackedSegment = _context.Segments.FirstOrDefault(s => s.Id == newSegment.Id);
+        if (trackedSegment is null)
+        {
+            return false;
+        }
+
+        tracked.SegmentId = trackedSegment.Id;
+        tracked.Segment = trackedSegment;
+        // 替换后原 AI reasoning 不再适用，清空避免误导用户
+        tracked.Reasoning = string.Empty;
+        tracked.PositionReasoning = string.Empty;
+
+        var trackedScheme = _context.Schemes.FirstOrDefault(s => s.Id == scheme.Id);
+        if (trackedScheme is not null)
+        {
+            MarkAsEdited(trackedScheme);
+        }
+        SaveContext();
+        return true;
+    }
+
     /// <summary>从方案中移除一个分镜。</summary>
     public void RemoveSegment(SchemeSegment schemeSeg, MixScheme scheme)
     {
