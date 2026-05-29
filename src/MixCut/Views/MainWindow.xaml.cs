@@ -25,7 +25,8 @@ public partial class MainWindow : Window
     public MainWindow(
         MainViewModel vm, AppSettings settings,
         ExportService exportService, BatchSegmentExportService batchExportService,
-        ASRService asrService)
+        ASRService asrService,
+        UpdateBannerViewModel updateBannerVm)
     {
         _vm = vm;
         _settings = settings;
@@ -36,6 +37,10 @@ public partial class MainWindow : Window
 
         // 初始化全局 Toast 容器（任何代码都可调 ToastService.Show 弹出反馈）
         MixCut.Views.Components.ToastService.Initialize(ToastHost);
+
+        // v0.3.1：顶部更新 banner —— DataContext 注入 VM，fire-and-forget 触发静默检查（不阻塞 UI）
+        UpdateBannerHost.DataContext = updateBannerVm;
+        _ = updateBannerVm.CheckSilentlyAsync();
 
         ProjectList.ItemsSource = _vm.ProjectVM.Projects;
         NavList.ItemsSource = NavigationItemExtensions.All.Select(n => n.LabelWithIcon()).ToList();

@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:MixCut.Views.Converters"
+        xmlns:shared="clr-namespace:MixCut.Views.Shared"
         Title="MixCut" Height="760" Width="1200"
         MinHeight="600" MinWidth="960"
         WindowStartupLocation="CenterScreen"
@@ -29,6 +30,10 @@
         <CommandBinding Command="{x:Static ApplicationCommands.Properties}" Executed="OnSettingsCommand" />
         <CommandBinding Command="{x:Static ApplicationCommands.Help}" Executed="OnShowShortcutsCommand" />
     </Window.CommandBindings>
+    <DockPanel>
+        <!-- 顶部「发现新版本」banner（v0.3.1）：默认 Collapsed；UpdateBannerViewModel.HasUpdate=true 时显示 -->
+        <shared:UpdateBanner DockPanel.Dock="Top" x:Name="UpdateBannerHost" />
+
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="220" />
@@ -137,4 +142,5 @@
         <!-- Toast 浮层（跨整个窗口，z 序最高，IsHitTest=False 不拦截点击） -->
         <Grid Grid.ColumnSpan="2" x:Name="ToastHost" IsHitTestVisible="False" />
     </Grid>
+    </DockPanel>
 </Window>

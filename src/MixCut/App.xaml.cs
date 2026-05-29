@@ -65,6 +65,8 @@ public partial class App : Application
         services.AddSingleton<BoundaryOptimizerService>();
         services.AddSingleton<ExportService>();
         services.AddSingleton<BatchSegmentExportService>();
+        // v0.3.1 对齐：启动期版本检测（GitHub 优先 / Gitee 容灾）
+        services.AddSingleton<Services.UpdateChecker.UpdateChecker>();
 
         // ViewModel（单例，主窗口持有）。
         services.AddSingleton<ProjectViewModel>();
@@ -72,6 +74,7 @@ public partial class App : Application
         services.AddSingleton<SegmentLibraryViewModel>();
         services.AddSingleton<SchemeViewModel>();
         services.AddSingleton<MainViewModel>();
+        services.AddSingleton<UpdateBannerViewModel>();
 
         // 视图。
         services.AddSingleton<MainWindow>();
