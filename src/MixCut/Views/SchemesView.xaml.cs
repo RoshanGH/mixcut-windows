@@ -66,6 +66,25 @@ public partial class SchemesView : UserControl, IProjectView
         RefreshDetail();
     }
 
+    /// <summary>
+    /// 从外部（如分镜库「✨ 组合为方案」流程）跳转到本视图并选中指定方案。
+    /// 对齐 Mac NavigationCoordinator.navigateToSchemes(selecting:).
+    /// </summary>
+    public void SelectScheme(MixScheme scheme)
+    {
+        _vm.SelectedStrategy = scheme.Strategy ?? _vm.Strategies.FirstOrDefault(s => s.Id == scheme.StrategyId);
+        _vm.SelectedScheme = scheme;
+
+        // 确保该方案所在策略是展开状态，否则详情面板看不出在哪个策略下
+        if (_vm.SelectedStrategy is { } strat)
+        {
+            _expandedStrategies.Add(strat.Id);
+        }
+
+        RefreshStrategyList();
+        RefreshDetail();
+    }
+
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
     {
         Dispatcher.Invoke(() =>

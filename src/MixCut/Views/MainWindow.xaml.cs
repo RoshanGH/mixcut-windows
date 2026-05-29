@@ -141,10 +141,34 @@ public partial class MainWindow : Window
         return view;
     }
 
+    /// <summary>暴露 SchemeViewModel 给子视图（如 SegmentLibrary 组合方案场景）调用，避免依赖静态 host。</summary>
+    public SchemeViewModel SchemeViewModel => _vm.SchemeVM;
+
     /// <summary>从内容视图请求切换导航（如概览页的快速操作按钮）。</summary>
     public void NavigateTo(NavigationItem item)
     {
         NavList.SelectedIndex = (int)item;
+    }
+
+    /// <summary>
+    /// 从分镜库「✨ 组合为方案」流程跳转到 Schemes 板块并选中指定方案。
+    /// 对齐 Mac NavigationCoordinator.navigateToSchemes(selecting:).
+    /// 1) 失效 Schemes 视图缓存，确保下次 UpdateContent 时强制 LoadProject 重查 DB
+    /// 2) 切到 Schemes nav（触发 UpdateContent → LoadProject → 显示新方案）
+    /// 3) 调用 SchemesView.SelectScheme 把焦点定位到新建方案
+    /// </summary>
+    public void NavigateToSchemesAndSelect(MixScheme scheme)
+    {
+        // 失效缓存：新方案是在 Schemes 视图外创建的，缓存命中会跳过 LoadProject
+        _viewLastLoadedProjectId.Remove(NavigationItem.Schemes);
+
+        NavList.SelectedIndex = (int)NavigationItem.Schemes;
+
+        // 切到 Schemes 后 UpdateContent 已触发；这时 view 是最新的，调 SelectScheme 选中
+        if (_views.TryGetValue(NavigationItem.Schemes, out var v) && v is SchemesView schemesView)
+        {
+            schemesView.SelectScheme(scheme);
+        }
     }
 
     /// <summary>

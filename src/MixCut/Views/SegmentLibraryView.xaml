@@ -99,6 +99,13 @@
                         <Button Content="清空" Padding="9,3" Margin="0,0,12,0"
                                 Background="White" BorderBrush="#CCC" FontSize="11"
                                 Cursor="Hand" Click="OnClearSelection" />
+                        <Button x:Name="CombineSchemeButton" Content="✨ 组合为方案"
+                                Padding="12,3" Margin="0,0,4,0"
+                                Background="#7C3AED" Foreground="White" BorderThickness="0"
+                                FontSize="11" Cursor="Hand" Click="OnCombineSchemeClick"
+                                IsEnabled="False"
+                                ToolTip="请至少选择 2 个分镜（按勾选顺序生成方案）"
+                                ToolTipService.ShowOnDisabled="True" />
                         <Button x:Name="BatchExportButton" Content="⬆ 批量导出"
                                 Padding="12,3" Margin="0,0,4,0"
                                 Background="#1D6BE5" Foreground="White" BorderThickness="0"

@@ -179,6 +179,63 @@ public partial class SegmentLibraryView : UserControl, IProjectView
         SelectionCountText.Text = $"已选 {n}";
         BatchExportButton.IsEnabled = n > 0;
         BatchDeleteButton.IsEnabled = n > 0;
+        CombineSchemeButton.IsEnabled = n >= 2;
+    }
+
+    private async void OnCombineSchemeClick(object sender, RoutedEventArgs e)
+    {
+        // async void 必须包 try/catch（CLAUDE.md §UI 标准）
+        try
+        {
+            var selected = _vm.SelectedSegmentsInOrder;
+            if (selected.Count < 2)
+            {
+                return;
+            }
+
+            var sheet = new SegmentLibrary.ArrangeOrderSheet(selected)
+            {
+                Owner = Window.GetWindow(this),
+            };
+            if (sheet.ShowDialog() != true || sheet.Result is null)
+            {
+                return;
+            }
+
+            if (_vm.CurrentProject is not Project project
+                || Window.GetWindow(this) is not MainWindow mainWin)
+            {
+                return;
+            }
+
+            Components.ToastService.Show("正在生成自定义方案…", Components.ToastStyle.Info);
+
+            // 取 SchemeViewModel 句柄：通过 MainWindow 间接拿（DI 单例）
+            var schemeVm = mainWin.SchemeViewModel;
+            schemeVm.LoadSchemes(project);
+
+            var scheme = await schemeVm.CreateCustomSchemeAsync(sheet.Result, project);
+            if (scheme is not null)
+            {
+                Components.ToastService.Show(
+                    $"已生成方案「{scheme.Name}」", Components.ToastStyle.Success);
+                mainWin.NavigateToSchemesAndSelect(scheme);
+                // 清空多选 + 退出选择模式（不打扰下一步操作）
+                _vm.SetSelectionMode(false);
+                UpdateSelectionToolbar();
+                RefreshContent();
+            }
+            else
+            {
+                Components.ToastService.Show(
+                    "生成失败，请检查 AI Key 或网络", Components.ToastStyle.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[SegmentLibraryView.OnCombineSchemeClick] 异常: {Message}", ex.Message);
+            Components.ToastService.Show($"组合失败: {ex.Message}", Components.ToastStyle.Warning);
+        }
     }
 
     // ---- 筛选工具栏 ----

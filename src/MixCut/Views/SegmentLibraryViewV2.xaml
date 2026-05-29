@@ -121,6 +121,15 @@
                                 Background="White" BorderBrush="{StaticResource BorderHoverBrush}"
                                 BorderThickness="1" Padding="9,3" Margin="0,0,12,0"
                                 FontSize="11" Cursor="Hand" />
+                        <Button x:Name="CombineSchemeButton" Content="✨ 组合为方案"
+                                Background="#7C3AED" Foreground="White"
+                                BorderThickness="0"
+                                Padding="12,3" Margin="0,0,4,0"
+                                FontSize="11" Cursor="Hand"
+                                IsEnabled="False"
+                                Click="OnCombineSchemeClick"
+                                ToolTip="请至少选择 2 个分镜（按勾选顺序生成方案）"
+                                ToolTipService.ShowOnDisabled="True" />
                         <Button x:Name="BatchExportButton" Content="⬆ 批量导出"
                                 Background="{StaticResource AccentBlueBrush}"
                                 Foreground="White" BorderThickness="0"
