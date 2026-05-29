@@ -113,14 +113,7 @@ public partial class ExportView : UserControl, IProjectView
         var hasAny = schemes.Count > 0;
         NoSchemeHint.Visibility = hasAny ? Visibility.Collapsed : Visibility.Visible;
 
-        SchemeCombo.ItemsSource = schemes;
-        SchemeCombo.DisplayMemberPath = nameof(MixScheme.Name);
-        if (schemes.Count > 0)
-        {
-            SchemeCombo.SelectedIndex = 0;
-        }
-
-        ExportSingleButton.IsEnabled = hasAny;
+        // v0.6.0 起单方案导出区块移除（筛选导出已覆盖此场景：选 1 个等同于原「单方案导出」）。
         // ExportAllButton.IsEnabled 由 UpdateExportButtonText 根据 _selectedSchemeIds 计数管理
     }
 
@@ -312,71 +305,7 @@ public partial class ExportView : UserControl, IProjectView
         Quality = (ExportQuality)Math.Max(0, QualityCombo.SelectedIndex),
     };
 
-    // ---- 单方案导出 ----
-
-    private async void OnExportSingleClick(object sender, RoutedEventArgs e)
-    {
-        if (SchemeCombo.SelectedItem is not MixScheme scheme)
-        {
-            MessageBox.Show("请先选择一个方案", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        var input = ExportInput.FromScheme(scheme);
-        if (input is null)
-        {
-            MessageBox.Show("方案中没有有效的分镜（可能视频文件不存在）", "无法导出",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        var dialog = new SaveFileDialog
-        {
-            Filter = "MP4 视频|*.mp4",
-            FileName = SanitizeFileName(scheme.Name) + ".mp4",
-        };
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
-
-        ExportSingleButton.IsEnabled = false;
-        ExportAllButton.IsEnabled = false;
-        CompletePanel.Visibility = Visibility.Collapsed;
-        ErrorPanel.Visibility = Visibility.Collapsed;
-        ProgressSection.Visibility = Visibility.Visible;
-        ProgressTitle.Text = "导出中…";
-
-        try
-        {
-            await _exportService.ExportAsync(input, dialog.FileName, BuildConfig(),
-                p => Dispatcher.Invoke(() =>
-                {
-                    ProgressStatusText.Text = p.Description;
-                    ProgressBar.Value = p.Progress;
-                    ProgressDetailText.Text = $"目标文件：{Path.GetFileName(dialog.FileName)}";
-                }));
-
-            _lastOutputDir = Path.GetDirectoryName(dialog.FileName);
-            CompletePanel.Visibility = Visibility.Visible;
-            CompleteText.Text = Path.GetFileName(dialog.FileName);
-            Components.ToastService.Show("✓ 导出完成", Components.ToastStyle.Success);
-        }
-        catch (Exception ex)
-        {
-            ErrorPanel.Visibility = Visibility.Visible;
-            ErrorText.Text = ex.Message;
-            Components.ToastService.Show("导出失败：" + ex.Message, Components.ToastStyle.Error);
-        }
-        finally
-        {
-            ProgressSection.Visibility = Visibility.Collapsed;
-            ExportSingleButton.IsEnabled = true;
-            UpdateExportButtonText(); // ExportAllButton 状态按当前选择数计算（N=0 时仍禁用）
-        }
-    }
-
-    // ---- 批量导出 ----
+    // ---- 批量导出（v0.6.0 起单方案区块已删除，统一走筛选导出） ----
 
     private async void OnExportAllClick(object sender, RoutedEventArgs e)
     {
@@ -431,7 +360,6 @@ public partial class ExportView : UserControl, IProjectView
         ErrorPanel.Visibility = Visibility.Collapsed;
         ProgressSection.Visibility = Visibility.Visible;
         ProgressTitle.Text = $"批量导出（共 {tasks.Count} 个 · {concurrency} 路并行）";
-        ExportSingleButton.IsEnabled = false;
         ExportAllButton.IsEnabled = false;
 
         var success = 0;
@@ -467,7 +395,6 @@ public partial class ExportView : UserControl, IProjectView
         await Task.WhenAll(exportJobs);
 
         ProgressSection.Visibility = Visibility.Collapsed;
-        ExportSingleButton.IsEnabled = true;
         UpdateExportButtonText(); // ExportAllButton 状态按当前选择数计算
 
         if (errors.Count == 0)

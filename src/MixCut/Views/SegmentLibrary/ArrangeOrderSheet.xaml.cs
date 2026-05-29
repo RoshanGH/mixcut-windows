@@ -25,16 +25,16 @@ public partial class ArrangeOrderSheet : Window
 
     public ArrangeOrderSheet(IReadOnlyList<Segment> initialOrder)
     {
-        InitializeComponent();
+        // 必须先初始化 OrderedItems 再 InitializeComponent —— XAML 里的
+        // {Binding OrderedItems / HintText / GenerateButtonText} 在 InitializeComponent
+        // 解析时就建立，OrderedItems 还是 null 会让 binding 静默失败，导致卡片列表空白
+        // + 「生成方案」按钮没文字（v0.6.0 用户实测发现）。
         OrderedItems = new ObservableCollection<SegmentPickerItem>(
-            initialOrder.Select(s =>
+            initialOrder.Select(s => new SegmentPickerItem(s, isAlreadyInScheme: false)
             {
-                var item = new SegmentPickerItem(s, isAlreadyInScheme: false)
-                {
-                    ThumbnailImage = LoadThumbBitmap(s.ThumbnailPath),
-                };
-                return item;
+                ThumbnailImage = LoadThumbBitmap(s.ThumbnailPath),
             }));
+        InitializeComponent();
     }
 
     private void OnMoveLeftClick(object sender, RoutedEventArgs e)

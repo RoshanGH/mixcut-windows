@@ -87,6 +87,14 @@ public partial class App : Application
         await _host.StartAsync();
         Log.Information("MixCut 启动，数据目录: {Root}", AppPaths.Root);
 
+        // v0.6.0：初始化 LibVLC（hover 播放器内核）。explicit 路径避免依赖默认搜索。
+        // 失败立即弹窗 + 退出（hover 播放是核心功能，没法降级）。
+        if (!Infrastructure.VlcBootstrap.Initialize())
+        {
+            Shutdown(1);
+            return;
+        }
+
         // 启动期环境一站式体检（v0.4.0）：OS/CPU/AVX2/VC Runtime/Binaries/AppData/InstallDir。
         // 一行汇总 [EnvDiag] 写日志，关键失败立即弹窗。让用户在撞运行时崩溃前先看到清晰指引。
         var envReport = Infrastructure.EnvironmentDiagnostics.RunAndLog();

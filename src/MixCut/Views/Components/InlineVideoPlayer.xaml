@@ -1,11 +1,28 @@
 <UserControl x:Class="MixCut.Views.Components.InlineVideoPlayer"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
              Background="Black">
+    <!--
+        v0.6.0 LibVLCSharp 彻底防闪烁架构：
+        - VideoView（VLC 内核渲染）默认 Collapsed —— 完全不在 visual tree 上，绝不暴露
+        - ThumbImage 默认 Visible —— 用户看到分镜首帧
+        - 用户 hover/click 触发：
+          1) ThumbImage 仍 Visible，遮罩 + 按钮切到 PlayerControls
+          2) MediaPlayer 在后台 Play + Seek 到 startTime（VideoView 仍 Collapsed，画面不暴露）
+          3) 等 MediaPlayer.TimeChanged 报告 Time ≥ startMs 后，才把 VideoView Visibility=Visible
+          4) 此时 VLC 已经在正确位置播放，用户从 ThumbImage 直接看到正确画面，零闪烁
+        - WPF MediaElement 的 D3D 渲染 + 无 seek 完成事件 → 改用 VLC 的 TimeChanged 精确感知
+    -->
     <Grid x:Name="RootGrid">
-        <!-- 缩略图态 -->
-        <Grid x:Name="ThumbnailState">
-            <Image x:Name="ThumbImage" Stretch="Uniform" />
+        <!-- 第 1 层：分镜首帧缩略图，覆盖整个 player 区域 -->
+        <Image x:Name="ThumbImage" Stretch="UniformToFill" />
+
+        <!-- 第 2 层：VLC VideoView，默认 Collapsed，TimeChanged 报告位置到位后才 Visible -->
+        <vlc:VideoView x:Name="VideoView" Visibility="Collapsed" />
+
+        <!-- 第 3 层：缩略图态 UI（半透明遮罩 + ▶ 按钮 + 时长 chip） -->
+        <Grid x:Name="ThumbControls">
             <Border Background="#40000000" />
             <Button x:Name="PlayButton" Click="OnPlayClick"
                     Background="Transparent" BorderThickness="0" Cursor="Hand"
@@ -15,7 +32,6 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
             </Button>
-            <!-- 缩略图右下角时长角标 -->
             <Border x:Name="DurationBadge" Background="#A0000000" CornerRadius="4"
                     Padding="6,1" Margin="0,0,6,6" Visibility="Collapsed"
                     HorizontalAlignment="Right" VerticalAlignment="Bottom">
@@ -24,13 +40,8 @@
             </Border>
         </Grid>
 
-        <!-- 播放态 -->
-        <Grid x:Name="PlayingState" Visibility="Collapsed">
-            <MediaElement x:Name="Player" LoadedBehavior="Manual" UnloadedBehavior="Stop"
-                          Stretch="Uniform" ScrubbingEnabled="True"
-                          MediaOpened="OnMediaOpened" MediaEnded="OnMediaEnded"
-                          MediaFailed="OnMediaFailed" />
-            <!-- 控制栏 -->
+        <!-- 第 4 层：播放态控制栏，仅播放且 VideoView 已显示时才有意义 -->
+        <Grid x:Name="PlayerControls" Visibility="Collapsed">
             <Border VerticalAlignment="Bottom" Background="#A0000000" Padding="6,3">
                 <Grid>
                     <Grid.ColumnDefinitions>
