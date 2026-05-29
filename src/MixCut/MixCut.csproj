@@ -13,10 +13,12 @@
     <ApplicationIcon>Resources\AppIcon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
     <RuntimeIdentifier Condition="'$(SelfContained)' == 'true'">win-x64</RuntimeIdentifier>
-    <!-- v0.6.0：对齐 macOS v0.3.0/v0.3.1/v0.3.2 + 换 WPF MediaElement → LibVLCSharp 内核 -->
-    <Version>0.6.0</Version>
-    <AssemblyVersion>0.6.0.0</AssemblyVersion>
-    <FileVersion>0.6.0.0</FileVersion>
+    <!-- v0.6.1：回退分镜 hover 播放到 v0.3.0 MediaElement 实现（消灭卡死，接受闪帧）。
+         v0.6.0 引入的 LibVLCSharp 基础设施（NuGet 包 + VlcBootstrap.cs）暂时保留，
+         不影响运行；下一轮 cleanup 单独清理省 ~150MB 安装包大小。 -->
+    <Version>0.6.1</Version>
+    <AssemblyVersion>0.6.1.0</AssemblyVersion>
+    <FileVersion>0.6.1.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
