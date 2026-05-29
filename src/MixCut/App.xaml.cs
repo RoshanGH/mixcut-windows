@@ -87,12 +87,6 @@ public partial class App : Application
         await _host.StartAsync();
         Log.Information("MixCut 启动，数据目录: {Root}", AppPaths.Root);
 
-        // v0.6.2：回退到 v0.3.0 MediaElement 实现，不再依赖 LibVLC 启动校验。
-        // 历史：v0.6.0 引入 LibVLCSharp 是为根治 MediaElement 的 seek 闪第 0 帧问题，
-        // 但 LibVLC native 对象（Media/MediaPlayer/Play/Stop/Dispose）每次 hover 都同步阻塞
-        // UI 线程 50-500ms，连续 hover 多张卡 = 卡死。用户实测后选择「接受闪帧、消灭卡死」。
-        // LibVLC NuGet 包暂时保留（避免本次改动牵涉打包），下一轮统一清理 saves ~150MB。
-
         // 启动期环境一站式体检（v0.4.0）：OS/CPU/AVX2/VC Runtime/Binaries/AppData/InstallDir。
         // 一行汇总 [EnvDiag] 写日志，关键失败立即弹窗。让用户在撞运行时崩溃前先看到清晰指引。
         var envReport = Infrastructure.EnvironmentDiagnostics.RunAndLog();

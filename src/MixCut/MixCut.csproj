@@ -14,8 +14,8 @@
     <Platforms>AnyCPU;x64</Platforms>
     <RuntimeIdentifier Condition="'$(SelfContained)' == 'true'">win-x64</RuntimeIdentifier>
     <!-- v0.6.1：回退分镜 hover 播放到 v0.3.0 MediaElement 实现（消灭卡死，接受闪帧）。
-         v0.6.0 引入的 LibVLCSharp 基础设施（NuGet 包 + VlcBootstrap.cs）暂时保留，
-         不影响运行；下一轮 cleanup 单独清理省 ~150MB 安装包大小。 -->
+         同步清掉 v0.6.0 引入的 LibVLCSharp NuGet 包 + VlcBootstrap.cs（孤儿代码），
+         安装包体积从 ~200MB 降到 ~50MB。 -->
     <Version>0.6.1</Version>
     <AssemblyVersion>0.6.1.0</AssemblyVersion>
     <FileVersion>0.6.1.0</FileVersion>
@@ -48,21 +48,6 @@
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
-    <!-- v0.6.0：换掉 WPF MediaElement（无法外部精准控制 seek 完成 / 易闪 0 秒画面），
-         改用 VideoLAN VLC 内核 + LibVLCSharp.WPF 绑定。提供 Playing / TimeChanged 精确事件，
-         能在「真正播到 startTime」之后才显示 VideoView，根治 hover 播放闪视频第一帧 bug。 -->
-    <PackageReference Include="LibVLCSharp" Version="3.8.5" />
-    <PackageReference Include="LibVLCSharp.WPF" Version="3.8.5" />
-    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.20" />
   </ItemGroup>
-
-  <!-- 项目只支持 x64，删除 VideoLAN.LibVLC.Windows 默认复制的 win-x86 二进制（~130MB 浪费）。
-       Inno Setup recursesubdirs 会跟着复制到安装包，不删的话用户下载包体翻倍。 -->
-  <Target Name="StripLibVlcX86" AfterTargets="Build">
-    <RemoveDir Directories="$(OutDir)libvlc\win-x86" Condition="Exists('$(OutDir)libvlc\win-x86')" />
-  </Target>
-  <Target Name="StripLibVlcX86Publish" AfterTargets="Publish">
-    <RemoveDir Directories="$(PublishDir)libvlc\win-x86" Condition="Exists('$(PublishDir)libvlc\win-x86')" />
-  </Target>
 
 </Project>
