@@ -24,6 +24,12 @@ public class MixStrategy
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
+    /// <summary>
+    /// 系统级「自定义组合」容器策略，true 时不会被 AI 生成流程触碰。
+    /// 每个项目恰好有 1 条 IsCustomGroup=true 的策略，用于挂载用户手动组合的方案。
+    /// </summary>
+    public bool IsCustomGroup { get; set; } = false;
+
     // ---- 导航属性 ----
 
     public Guid? ProjectId { get; set; }
