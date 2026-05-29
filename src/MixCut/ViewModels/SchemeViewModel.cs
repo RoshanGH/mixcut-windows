@@ -597,6 +597,113 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         }
     }
 
+    // ---- v0.3.0：自定义方案创建（端到端：建占位 → AI 反推 → 刷新） ----
+
+    /// <summary>
+    /// 用户在分镜库勾选 ≥2 个分镜并确认顺序后调用。
+    /// 1) 在「自定义组合」容器策略下立即建占位 scheme（默认名「自定义 #N」），UI 可立即展示
+    /// 2) 异步调 InferMetadataAsync 反推 5 字段元信息，覆盖默认名
+    /// 3) 反推失败 → 保留占位名 + 调用方应 Toast 提示「方案已生成（AI 反推失败，可手动改名）」
+    /// 返回最终 MixScheme（含落库 + 内存集合刷新；调用方可用 SelectedStrategy/SelectedScheme 选中）。
+    /// </summary>
+    public async Task<MixScheme?> CreateCustomSchemeAsync(
+        IReadOnlyList<Segment> orderedSegments,
+        Project project,
+        CancellationToken cancellationToken = default)
+    {
+        if (_context is null)
+        {
+            return null;
+        }
+        if (orderedSegments.Count < 2)
+        {
+            return null;
+        }
+
+        // 1. 找/建自定义组合容器策略（Phase 1 已经保证每个项目都有 1 条，但容灾兜底再建一次）
+        var customGroup = _context.Strategies
+            .Include(s => s.Schemes)
+            .FirstOrDefault(s => s.ProjectId == project.Id && s.IsCustomGroup);
+        if (customGroup is null)
+        {
+            customGroup = new MixStrategy
+            {
+                Name = "自定义组合",
+                Style = string.Empty,
+                StrategyDescription = "手动挑选分镜组合的方案",
+                TargetAudience = string.Empty,
+                NarrativeStructure = string.Empty,
+                TargetDuration = 0,
+                IsCustomGroup = true,
+                ProjectId = project.Id,
+            };
+            _context.Strategies.Add(customGroup);
+            _context.SaveChanges();
+            _logger.LogInformation("[CustomScheme] 容灾兜底：补建自定义组合策略 project={ProjectId}", project.Id);
+        }
+
+        var nextIdx = (customGroup.Schemes.Count == 0 ? 0 : customGroup.Schemes.Max(s => s.VariationIndex)) + 1;
+        var placeholderName = $"自定义 #{nextIdx}";
+        var totalDuration = orderedSegments.Sum(s => s.Duration);
+
+        var scheme = new MixScheme
+        {
+            VariationIndex = nextIdx,
+            SchemeIndex = $"custom_{nextIdx:D3}",
+            Name = placeholderName,
+            Style = string.Empty,
+            SchemeDescription = string.Empty,
+            TargetAudience = string.Empty,
+            NarrativeStructure = string.Empty,
+            EstimatedDuration = totalDuration,
+            // 自定义方案不打 IsManuallyEdited（用户创建的本就是手动的；该字段是给 AI 方案后被改的）
+            IsManuallyEdited = false,
+            StrategyId = customGroup.Id,
+            ProjectId = project.Id,
+        };
+        _context.Schemes.Add(scheme);
+
+        // 2. 按用户给的顺序建 SchemeSegment
+        for (var i = 0; i < orderedSegments.Count; i++)
+        {
+            var trackedSeg = _context.Segments.FirstOrDefault(s => s.Id == orderedSegments[i].Id);
+            if (trackedSeg is null)
+            {
+                _logger.LogWarning("[CustomScheme] 分镜 {Id} 不在 db 上下文，跳过", orderedSegments[i].Id);
+                continue;
+            }
+            _context.SchemeSegments.Add(new SchemeSegment
+            {
+                Position = i + 1,
+                Reasoning = string.Empty,
+                PositionReasoning = string.Empty,
+                Scheme = scheme,
+                Segment = trackedSeg,
+            });
+        }
+
+        _context.SaveChanges();
+        _logger.LogInformation("[CustomScheme] 占位方案已落库: name={Name} segments={Count}",
+            placeholderName, orderedSegments.Count);
+
+        // 3. 异步反推元信息（失败不阻断，保留占位名）
+        var meta = await _schemeService.InferMetadataAsync(orderedSegments, cancellationToken);
+        if (meta is not null && !string.IsNullOrWhiteSpace(meta.Name))
+        {
+            scheme.Name = meta.Name!;
+            scheme.NarrativeStructure = meta.NarrativeStructure ?? string.Empty;
+            scheme.TargetAudience = meta.TargetAudience ?? string.Empty;
+            scheme.SchemeDescription = meta.SchemeDescription ?? string.Empty;
+            scheme.Style = meta.Style ?? string.Empty;
+            _context.SaveChanges();
+            _logger.LogInformation("[CustomScheme] 元信息反推完成: {Name}", scheme.Name);
+        }
+
+        // 4. 刷新内存集合，让 UI Strategies / CustomGroup / Schemes 全部联动
+        LoadSchemes(project);
+        return Schemes.FirstOrDefault(s => s.Id == scheme.Id);
+    }
+
     private void SaveContext()
     {
         try
