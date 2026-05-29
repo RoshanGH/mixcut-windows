@@ -18,6 +18,9 @@ public partial class ExportView : UserControl, IProjectView
     private readonly ExportService _exportService;
     private string? _lastOutputDir;
 
+    /// <summary>用户勾选的待导出方案 ID 集合。LoadProject 时默认全选当前项目所有方案。</summary>
+    private readonly HashSet<Guid> _selectedSchemeIds = new();
+
     public ExportView(SchemeViewModel schemeVM, ExportService exportService)
     {
         _schemeVM = schemeVM;
@@ -65,7 +68,21 @@ public partial class ExportView : UserControl, IProjectView
     public void LoadProject(Project project)
     {
         _schemeVM.LoadSchemes(project);
+
+        // 默认全选当前项目所有方案（对齐 Mac v0.3.0 默认全选语义）
+        // 重置 _selectedSchemeIds 保证上个项目的选择状态不会泄露过来
+        _selectedSchemeIds.Clear();
+        foreach (var strategy in _schemeVM.Strategies)
+        {
+            foreach (var scheme in strategy.Schemes)
+            {
+                _selectedSchemeIds.Add(scheme.Id);
+            }
+        }
+
         RefreshOverview();
+        RefreshSelectionPanel();
+        UpdateExportButtonText();
     }
 
     /// <summary>按当前 ExportConfig + 总时长刷新预估大小，对齐 Mac ExportView 概览第四项。</summary>
@@ -104,7 +121,188 @@ public partial class ExportView : UserControl, IProjectView
         }
 
         ExportSingleButton.IsEnabled = hasAny;
-        ExportAllButton.IsEnabled = hasAny;
+        // ExportAllButton.IsEnabled 由 UpdateExportButtonText 根据 _selectedSchemeIds 计数管理
+    }
+
+    // ---- 批量导出选择面板（v0.3.0：嵌入式策略 checkbox 列表 + 三态半选）----
+
+    /// <summary>渲染策略 / 方案 checkbox 树。每次切项目 / 全选反选清空时调用。</summary>
+    private void RefreshSelectionPanel()
+    {
+        StrategyTree.Items.Clear();
+        var strategies = _schemeVM.Strategies;
+        if (strategies.Count == 0)
+        {
+            SelectionPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+        SelectionPanel.Visibility = Visibility.Visible;
+
+        foreach (var strategy in strategies)
+        {
+            StrategyTree.Items.Add(BuildStrategyGroup(strategy));
+        }
+
+        UpdateSelectedCountLabel();
+    }
+
+    /// <summary>构建单个策略的折叠组：策略三态 checkbox + 子方案 checkbox 列表。</summary>
+    private UIElement BuildStrategyGroup(MixStrategy strategy)
+    {
+        var sp = new StackPanel();
+
+        var strategyCheck = new CheckBox
+        {
+            IsThreeState = true,
+            Tag = strategy,
+            Margin = new Thickness(0, 4, 0, 4),
+            Content = new TextBlock
+            {
+                Text = strategy.Name,
+                FontSize = 12, FontWeight = FontWeights.SemiBold,
+                Foreground = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(0x33, 0x33, 0x33)),
+            },
+        };
+        strategyCheck.IsChecked = ComputeStrategyTriState(strategy);
+        strategyCheck.Click += OnStrategyCheckClick;
+        sp.Children.Add(strategyCheck);
+
+        var childPanel = new StackPanel { Margin = new Thickness(22, 0, 0, 6) };
+        foreach (var scheme in strategy.OrderedSchemes)
+        {
+            childPanel.Children.Add(BuildSchemeCheck(scheme, strategy));
+        }
+        sp.Children.Add(childPanel);
+
+        return sp;
+    }
+
+    private UIElement BuildSchemeCheck(MixScheme scheme, MixStrategy parent)
+    {
+        var cb = new CheckBox
+        {
+            Tag = (scheme, parent),
+            IsChecked = _selectedSchemeIds.Contains(scheme.Id),
+            Margin = new Thickness(0, 2, 0, 2),
+        };
+        var label = new StackPanel { Orientation = Orientation.Horizontal };
+        label.Children.Add(new TextBlock
+        {
+            Text = scheme.Name, FontSize = 11,
+            Foreground = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(0x55, 0x55, 0x55)),
+        });
+        if (scheme.IsManuallyEdited)
+        {
+            label.Children.Add(new TextBlock
+            {
+                Text = "·已修改", FontSize = 9,
+                Foreground = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(0x80, 0x80, 0x80)),
+                Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+        cb.Content = label;
+        cb.Click += OnSchemeCheckClick;
+        return cb;
+    }
+
+    /// <summary>三态计算：全选 → true；全空 → false；部分 → null。</summary>
+    private bool? ComputeStrategyTriState(MixStrategy strategy)
+    {
+        if (strategy.Schemes.Count == 0) return false;
+        var selectedInStrategy = strategy.Schemes.Count(s => _selectedSchemeIds.Contains(s.Id));
+        if (selectedInStrategy == 0) return false;
+        if (selectedInStrategy == strategy.Schemes.Count) return true;
+        return null;
+    }
+
+    private void OnStrategyCheckClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox cb || cb.Tag is not MixStrategy strategy) return;
+        // WPF IsThreeState=true 默认点击循环：true → false → null → true
+        // 我们要简化为：半选(null) → 全选(true)；全选(true) → 全空(false)；全空(false) → 全选(true)
+        // 此时 cb.IsChecked 已经是 WPF 帮我们切到下一帧的值，需要根据上一帧推断目标态。
+        // 简化策略：只要不是全选就置全选，否则清空。
+        var newState = ComputeStrategyTriState(strategy) != true; // 上一帧非全选 → 全选；上一帧全选 → 清空
+        cb.IsChecked = newState;
+
+        if (newState)
+        {
+            foreach (var s in strategy.Schemes) _selectedSchemeIds.Add(s.Id);
+        }
+        else
+        {
+            foreach (var s in strategy.Schemes) _selectedSchemeIds.Remove(s.Id);
+        }
+        RefreshSelectionPanel();
+        UpdateExportButtonText();
+    }
+
+    private void OnSchemeCheckClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox cb) return;
+        if (cb.Tag is not ValueTuple<MixScheme, MixStrategy> tup) return;
+        var (scheme, _) = tup;
+        if (cb.IsChecked == true)
+        {
+            _selectedSchemeIds.Add(scheme.Id);
+        }
+        else
+        {
+            _selectedSchemeIds.Remove(scheme.Id);
+        }
+        RefreshSelectionPanel(); // 刷父三态
+        UpdateExportButtonText();
+    }
+
+    private void OnSelectAllSchemesClick(object sender, RoutedEventArgs e)
+    {
+        _selectedSchemeIds.Clear();
+        foreach (var strategy in _schemeVM.Strategies)
+            foreach (var s in strategy.Schemes) _selectedSchemeIds.Add(s.Id);
+        RefreshSelectionPanel();
+        UpdateExportButtonText();
+    }
+
+    private void OnInvertSchemesClick(object sender, RoutedEventArgs e)
+    {
+        var allIds = _schemeVM.Strategies.SelectMany(st => st.Schemes).Select(s => s.Id).ToHashSet();
+        var newSel = allIds.Except(_selectedSchemeIds).ToList();
+        _selectedSchemeIds.Clear();
+        foreach (var id in newSel) _selectedSchemeIds.Add(id);
+        RefreshSelectionPanel();
+        UpdateExportButtonText();
+    }
+
+    private void OnClearSchemesClick(object sender, RoutedEventArgs e)
+    {
+        _selectedSchemeIds.Clear();
+        RefreshSelectionPanel();
+        UpdateExportButtonText();
+    }
+
+    private void UpdateSelectedCountLabel()
+    {
+        var total = _schemeVM.Strategies.Sum(st => st.Schemes.Count);
+        SelectedCountLabel.Text = $"已选 {_selectedSchemeIds.Count}/{total}";
+    }
+
+    private void UpdateExportButtonText()
+    {
+        var n = _selectedSchemeIds.Count;
+        if (n == 0)
+        {
+            ExportAllButton.Content = "请先选择方案";
+            ExportAllButton.IsEnabled = false;
+        }
+        else
+        {
+            ExportAllButton.Content = $"📦  导出选中的 {n} 个";
+            ExportAllButton.IsEnabled = true;
+        }
+        UpdateSelectedCountLabel();
     }
 
     private ExportConfig BuildConfig() => new()
@@ -174,7 +372,7 @@ public partial class ExportView : UserControl, IProjectView
         {
             ProgressSection.Visibility = Visibility.Collapsed;
             ExportSingleButton.IsEnabled = true;
-            ExportAllButton.IsEnabled = true;
+            UpdateExportButtonText(); // ExportAllButton 状态按当前选择数计算（N=0 时仍禁用）
         }
     }
 
@@ -182,7 +380,9 @@ public partial class ExportView : UserControl, IProjectView
 
     private async void OnExportAllClick(object sender, RoutedEventArgs e)
     {
-        var schemes = _schemeVM.Schemes;
+        // 用户在异步导出过程中可能切项目 / 改选择，snapshot 一份避免被并发改写。
+        var snapshotIds = new HashSet<Guid>(_selectedSchemeIds);
+        var schemes = _schemeVM.Schemes.Where(s => snapshotIds.Contains(s.Id)).ToList();
         if (schemes.Count == 0)
         {
             return;
@@ -268,7 +468,7 @@ public partial class ExportView : UserControl, IProjectView
 
         ProgressSection.Visibility = Visibility.Collapsed;
         ExportSingleButton.IsEnabled = true;
-        ExportAllButton.IsEnabled = true;
+        UpdateExportButtonText(); // ExportAllButton 状态按当前选择数计算
 
         if (errors.Count == 0)
         {
