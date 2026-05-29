@@ -175,7 +175,7 @@ public partial class SchemesView : UserControl, IProjectView
             return;
         }
 
-        foreach (var strategy in _vm.Strategies)
+        foreach (var strategy in _vm.OrderedStrategiesForDisplay)
         {
             StrategyList.Children.Add(BuildStrategySection(strategy));
         }
@@ -319,11 +319,25 @@ public partial class SchemesView : UserControl, IProjectView
         headerGrid.Children.Add(chevron);
 
         var info = new StackPanel();
-        info.Children.Add(new TextBlock
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+        if (strategy.IsCustomGroup)
+        {
+            nameRow.Children.Add(new TextBlock
+            {
+                Text = "✨",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x3A, 0xED)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+            });
+        }
+        nameRow.Children.Add(new TextBlock
         {
             Text = strategy.Name, FontSize = 12, FontWeight = FontWeights.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
         });
+        info.Children.Add(nameRow);
         info.Children.Add(new TextBlock
         {
             Text = $"🎨 {strategy.Style}   👥 {strategy.TargetAudience}",
@@ -353,31 +367,91 @@ public partial class SchemesView : UserControl, IProjectView
             {
                 sp.Children.Add(BuildSchemeRow(scheme));
             }
+            // 自定义组合策略空状态引导（v0.3.0 对齐）
+            if (strategy.IsCustomGroup && strategy.SchemeCount == 0)
+            {
+                sp.Children.Add(BuildCustomGroupEmptyHint());
+            }
         }
 
         sp.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xEE, 0xEE)) });
         return sp;
     }
 
+    /// <summary>自定义组合策略空状态引导卡（v0.3.0 对齐 Mac SchemeListView empty hint）。</summary>
+    private UIElement BuildCustomGroupEmptyHint()
+    {
+        var border = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x18, 0x7C, 0x3A, 0xED)),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(14, 10, 14, 10),
+            Margin = new Thickness(28, 6, 14, 8),
+        };
+        var sp = new StackPanel();
+        sp.Children.Add(new TextBlock
+        {
+            Text = "还没有自定义组合",
+            FontSize = 12, FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x3A, 0xED)),
+        });
+        sp.Children.Add(new TextBlock
+        {
+            Text = "去分镜素材库挑几个分镜，按勾选顺序自动生成方案",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+            Margin = new Thickness(0, 4, 0, 8),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        var gotoBtn = new Button
+        {
+            Content = "前往分镜素材库",
+            Background = new SolidColorBrush(Color.FromRgb(0x7C, 0x3A, 0xED)),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(10, 5, 10, 5),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Cursor = Cursors.Hand,
+        };
+        gotoBtn.Click += (_, _) =>
+        {
+            var mainWin = Window.GetWindow(this) as MainWindow;
+            mainWin?.NavigateTo(NavigationItem.SegmentLibrary);
+        };
+        sp.Children.Add(gotoBtn);
+        border.Child = sp;
+        return border;
+    }
+
     private ContextMenu BuildStrategyContextMenu(MixStrategy strategy)
     {
         var menu = new ContextMenu();
         var deleteItem = new MenuItem { Header = "删除策略", Tag = strategy };
-        deleteItem.Click += (_, _) =>
+        if (strategy.IsCustomGroup)
         {
-            var confirm = MessageBox.Show(
-                $"删除策略「{strategy.Name}」及其全部 {strategy.SchemeCount} 个变体？",
-                "确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-            if (confirm == MessageBoxResult.OK)
+            // 自定义组合是系统级容器策略，不允许用户删除/重命名
+            deleteItem.IsEnabled = false;
+            deleteItem.ToolTip = "「自定义组合」是系统策略，不可删除";
+            ToolTipService.SetShowOnDisabled(deleteItem, true);
+        }
+        else
+        {
+            deleteItem.Click += (_, _) =>
             {
-                _vm.DeleteStrategy(strategy);
-                RefreshStrategyList();
-                if (_vm.SelectedScheme is null)
+                var confirm = MessageBox.Show(
+                    $"删除策略「{strategy.Name}」及其全部 {strategy.SchemeCount} 个变体？",
+                    "确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+                if (confirm == MessageBoxResult.OK)
                 {
-                    RefreshDetail();
+                    _vm.DeleteStrategy(strategy);
+                    RefreshStrategyList();
+                    if (_vm.SelectedScheme is null)
+                    {
+                        RefreshDetail();
+                    }
                 }
-            }
-        };
+            };
+        }
         menu.Items.Add(deleteItem);
         return menu;
     }
@@ -412,11 +486,25 @@ public partial class SchemesView : UserControl, IProjectView
         grid.Children.Add(idx);
 
         var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        info.Children.Add(new TextBlock
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+        nameRow.Children.Add(new TextBlock
         {
             Text = scheme.Name, FontSize = 11, FontWeight = FontWeights.Medium,
             TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
         });
+        if (scheme.IsManuallyEdited)
+        {
+            nameRow.Children.Add(new TextBlock
+            {
+                Text = "·已修改",
+                FontSize = 9,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0),
+            });
+        }
+        info.Children.Add(nameRow);
         info.Children.Add(new TextBlock
         {
             Text = $"{scheme.SegmentCount} 分镜 · " +
