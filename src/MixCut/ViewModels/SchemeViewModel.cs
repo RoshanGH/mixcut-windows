@@ -50,6 +50,32 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
     public IReadOnlyList<MixScheme> Schemes =>
         Strategies.SelectMany(s => s.OrderedSchemes).ToList();
 
+    /// <summary>AI 生成的策略（排除自定义组合容器）。供 SchemeListView 在「AI 方案」分组渲染。</summary>
+    public IReadOnlyList<MixStrategy> AIStrategies =>
+        Strategies.Where(s => !s.IsCustomGroup).ToList();
+
+    /// <summary>当前项目的「自定义组合」容器策略（Phase 1 保证恰好 1 条或 null）。</summary>
+    public MixStrategy? CustomGroup =>
+        Strategies.FirstOrDefault(s => s.IsCustomGroup);
+
+    /// <summary>
+    /// SchemeListView 左栏渲染用的策略顺序：AI 策略在前，自定义组合永远排在最后。
+    /// 对齐 Mac SchemeViewModel.orderedStrategiesForDisplay。
+    /// </summary>
+    public IReadOnlyList<MixStrategy> OrderedStrategiesForDisplay
+    {
+        get
+        {
+            var list = new List<MixStrategy>(AIStrategies);
+            var custom = CustomGroup;
+            if (custom is not null)
+            {
+                list.Add(custom);
+            }
+            return list;
+        }
+    }
+
     /// <summary>加载项目的所有策略和方案。</summary>
     public void LoadSchemes(Project project)
     {
