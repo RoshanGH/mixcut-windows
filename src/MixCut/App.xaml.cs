@@ -3,7 +3,9 @@ using System.Windows;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using MixCut.Data;
+using MixCut.Models;
 using MixCut.Services.AI;
 using MixCut.Services.ASR;
 using MixCut.Services.BoundaryOptimizer;
@@ -123,9 +125,20 @@ public partial class App : Application
             db.Database.EnsureCreated();
             Log.Information("数据库就绪: {DbFile}", AppPaths.DatabaseFile);
 
+            // v0.6.0 对齐迁移：EF Core EnsureCreated 不会自动 ALTER 老库，
+            // 老用户升级后 Strategies / Schemes 缺新加的列会撞 SqliteException。
+            // 显式补列（默认 false，对老数据无副作用）。必须在写入新字段前完成。
+            AddColumnIfMissing(db, "Strategies", "IsCustomGroup", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(db, "Schemes", "IsManuallyEdited", "INTEGER NOT NULL DEFAULT 0");
+
             // 清理上次未正常完成的中间态视频（崩溃/强退导致状态卡在分析中）。
             // 对齐 macOS 版 MixCutApp.resetStaleAnalyzingStatus。
             ResetStaleAnalyzingStatus(db);
+
+            // v0.3.0 对齐迁移：老项目补建「自定义组合」策略
+            var settingsForMigration = _host.Services.GetRequiredService<AppSettings>();
+            var loggerForMigration = _host.Services.GetRequiredService<ILogger<App>>();
+            EnsureCustomGroupStrategy(db, settingsForMigration, loggerForMigration);
         }
 
         var window = _host.Services.GetRequiredService<MainWindow>();
@@ -177,6 +190,99 @@ public partial class App : Application
         catch
         {
             // 弹窗也可能失败（如崩在 dispatcher 关闭后）
+        }
+    }
+
+    /// <summary>
+    /// 在 SQLite 表上幂等加列（v0.6.0 升级老库用）。EF Core 的 EnsureCreated 跳过已存在表，
+    /// 不会自动 ALTER，所以新加字段必须手动补，否则老用户升级后会撞 SqliteException。
+    /// </summary>
+    private static void AddColumnIfMissing(MixCutDbContext db, string table, string column, string columnDef)
+    {
+        try
+        {
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+
+            using var checkCmd = conn.CreateCommand();
+            checkCmd.CommandText = $"PRAGMA table_info({table})";
+            using var reader = checkCmd.ExecuteReader();
+            var exists = false;
+            while (reader.Read())
+            {
+                if (string.Equals(reader["name"]?.ToString(), column, StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+            reader.Close();
+
+            if (!exists)
+            {
+                using var alter = conn.CreateCommand();
+                alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {columnDef}";
+                alter.ExecuteNonQuery();
+                Log.Information("[SchemaMigration] 补列: {Table}.{Column}", table, column);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[SchemaMigration] 补列失败 {Table}.{Column}", table, column);
+        }
+    }
+
+    /// <summary>
+    /// 为所有老项目补建「自定义组合」容器策略（首次升级后跑一次）。
+    /// 对齐 Mac v0.3.0 ensureCustomGroupStrategy。
+    /// 用 AppSettings.DidEnsureCustomGroupStrategyV1 防重；失败不阻断启动。
+    /// </summary>
+    private static void EnsureCustomGroupStrategy(MixCutDbContext db, AppSettings settings, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        if (settings.DidEnsureCustomGroupStrategyV1)
+        {
+            return;
+        }
+
+        try
+        {
+            var projects = db.Projects.Include(p => p.Strategies).ToList();
+            var added = 0;
+            foreach (var p in projects)
+            {
+                if (p.Strategies.Any(s => s.IsCustomGroup))
+                {
+                    continue;
+                }
+                db.Strategies.Add(new MixStrategy
+                {
+                    Name = "自定义组合",
+                    Style = string.Empty,
+                    StrategyDescription = "手动挑选分镜组合的方案",
+                    TargetAudience = string.Empty,
+                    NarrativeStructure = string.Empty,
+                    TargetDuration = 0,
+                    IsCustomGroup = true,
+                    ProjectId = p.Id,
+                });
+                added++;
+            }
+
+            if (added > 0)
+            {
+                db.SaveChanges();
+                logger.LogInformation("[CustomGroupMigration] 已为 {Count} 个老项目补建「自定义组合」策略", added);
+            }
+            else
+            {
+                logger.LogInformation("[CustomGroupMigration] 无需补建（已有 / 无老项目）");
+            }
+
+            settings.DidEnsureCustomGroupStrategyV1 = true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[CustomGroupMigration] 迁移失败（不阻断启动）");
         }
     }
 
