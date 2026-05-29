@@ -71,6 +71,22 @@ public partial class ProjectViewModel : ObservableObject
         using (var db = _dbFactory.CreateDbContext())
         {
             db.Projects.Add(project);
+
+            // v0.3.0 对齐：新项目同步创建「自定义组合」容器策略，让用户在「混剪方案」板块
+            // 看到的左栏永远有这一项（即使还没生成任何 AI 策略），点击空状态可以引导去分镜库挑选。
+            var customGroup = new MixStrategy
+            {
+                Name = "自定义组合",
+                Style = string.Empty,
+                StrategyDescription = "手动挑选分镜组合的方案",
+                TargetAudience = string.Empty,
+                NarrativeStructure = string.Empty,
+                TargetDuration = 0,
+                IsCustomGroup = true,
+                Project = project,
+            };
+            db.Strategies.Add(customGroup);
+
             db.SaveChanges();
         }
 
