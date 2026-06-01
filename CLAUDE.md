@@ -540,7 +540,4 @@ Settings → 系统信息必须显示：
 - `HardwareEncoderProbe.WhisperBackendDescription` —— Whisper 后端
 - `ConcurrencyPolicy.Explain*Formula()` —— 让用户看到「10 路（CPU 7 + GPU 加成 +3，上限 11）」
 
-### H. 当前在用的 Gitee Token 处理
-
-私有令牌**用完即焚**：发版完成后立刻让用户去 https://gitee.com/profile/personal_access_tokens 删除。本会话 token `0872e38d1d661a071dca68076e49d085` 跨多次 release 复用过；下次发版前要让用户重新生成。
 **永远不要把 token 写进代码 / commit / 长期日志**。

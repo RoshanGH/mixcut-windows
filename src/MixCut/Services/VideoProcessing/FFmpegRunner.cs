@@ -425,10 +425,15 @@ public sealed class FFmpegRunner
 
         for (var i = 0; i < segments.Count; i++)
         {
+            // format=yuv420p 必须有（v0.7.1 修 N 卡导出崩溃）：
+            //  ① concat 滤镜要求所有输入像素格式一致，混入 10-bit HEVC（手机素材常见）会
+            //     「at least one of its streams received no packets」(exit -542398533) 输出 0 帧；
+            //  ② h264_nvenc 不支持 10-bit，喂 yuv420p10le 直接 0xC0000005 崩溃 (exit -1073741819)。
+            //  统一降到 8-bit 4:2:0，nvenc/qsv/amf/libx264 全部支持。构建机(QSV+8bit 素材)测不出此坑。
             filterParts.Add(
                 $"[{i}:v]scale={targetScale}:force_original_aspect_ratio=decrease," +
                 $"pad={targetScale}:(ow-iw)/2:(oh-ih)/2:black," +
-                $"setsar=1,fps=30[v{i}]");
+                $"setsar=1,fps=30,format=yuv420p[v{i}]");
 
             var durStr = (segments[i].End - segments[i].Start).ToString("F6", CultureInfo.InvariantCulture);
             if (hasAudio[i])

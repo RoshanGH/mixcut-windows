@@ -92,19 +92,43 @@ public sealed class ExportService
         onProgress?.Invoke(new ExportProgress(
             ExportPhase.Encoding, 0.05, $"正在编码拼接 {input.Segments.Count} 个片段..."));
 
-        await _ffmpeg.ConcatAsync(
-            input.Segments,
-            outputPath,
-            resolution,
-            config.Quality.Crf(config.Codec),
-            config.Codec.FfmpegCodec(),
-            isHardware: config.Codec.IsHardware(),
-            videoBitrateKbps: config.Quality.VideoBitrateKbps(config.Codec),
-            onProgress: ffmpegProgress => onProgress?.Invoke(new ExportProgress(
-                ExportPhase.Encoding,
-                0.05 + ffmpegProgress.Percentage * 0.9,
-                $"正在编码... {(int)(ffmpegProgress.Percentage * 100)}%")),
-            cancellationToken: cancellationToken);
+        Action<FFmpegProgress> reportEncode = ffmpegProgress => onProgress?.Invoke(new ExportProgress(
+            ExportPhase.Encoding,
+            0.05 + ffmpegProgress.Percentage * 0.9,
+            $"正在编码... {(int)(ffmpegProgress.Percentage * 100)}%"));
+
+        var isHardware = config.Codec.IsHardware();
+        try
+        {
+            await _ffmpeg.ConcatAsync(
+                input.Segments, outputPath, resolution,
+                config.Quality.Crf(config.Codec), config.Codec.FfmpegCodec(),
+                isHardware: isHardware,
+                videoBitrateKbps: config.Quality.VideoBitrateKbps(config.Codec),
+                onProgress: reportEncode, cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // 用户主动取消，不兜底
+        }
+        catch (Exception ex) when (isHardware)
+        {
+            // 硬件编码器（NVENC/QSV/AMF）在部分机器上会崩溃 (0xC0000005) 或产出 0 帧
+            // (exit -542398533 "received no packets") —— 成因可能是显卡驱动不兼容、消费级 NVENC
+            // 会话数超限、或特殊输入像素格式。构建机无对应 GPU，这类坑测不出（见 CLAUDE.md）。
+            // 自动降级到 CPU libx264 重试一次：慢但一定能导出，守住「装上即跑」底线。
+            _logger.LogWarning(ex,
+                "[ExportFallback] 硬件编码失败，降级 CPU libx264 重试: {Output}", outputPath);
+            onProgress?.Invoke(new ExportProgress(
+                ExportPhase.Encoding, 0.05, "硬件编码失败，正在用 CPU 重新编码（较慢）..."));
+            await _ffmpeg.ConcatAsync(
+                input.Segments, outputPath, resolution,
+                config.Quality.Crf(ExportCodec.H264), ExportCodec.H264.FfmpegCodec(),
+                isHardware: false,
+                videoBitrateKbps: config.Quality.VideoBitrateKbps(ExportCodec.H264),
+                onProgress: reportEncode, cancellationToken: cancellationToken);
+            _logger.LogInformation("[ExportFallback] CPU 降级编码成功: {Output}", outputPath);
+        }
 
         onProgress?.Invoke(new ExportProgress(ExportPhase.Completed, 1.0, "导出完成"));
         _logger.LogInformation("导出完成: {Output}", outputPath);

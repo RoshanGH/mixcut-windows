@@ -33,12 +33,17 @@ public static class ConcurrencyPolicy
     public static int MaxExportConcurrency(int tasksCount = int.MaxValue)
     {
         var cores = Environment.ProcessorCount;
-        var hwEncode = HardwareEncoderProbe.H264Hardware is not null;
+        var h264hw = HardwareEncoderProbe.H264Hardware;
+        var hwEncode = h264hw is not null;
+        // v0.7.1：消费级 NVIDIA NVENC 同时只允许 3-5 路编码会话，并发开满（原 11）会让超出的
+        // 会话初始化失败 → 该路导出产出 0 帧 / 崩溃（用户 N 卡导出 0/21 全失败的元凶之一）。
+        // NVENC 显式封 3 路；QSV/AMF 无此硬限制，维持 11。
+        var isNvenc = h264hw?.Contains("nvenc", StringComparison.OrdinalIgnoreCase) == true;
         var hwBoost = hwEncode ? 3 : 0;
         // 基础：(N-2)/2（软件 H.264 编码 ~50% CPU 一路，留 2 核给 UI / IO）
-        // GPU 编码 +3：NVENC/QSV/AMF 一路编码 CPU 占用 ~10%，可叠加
-        // 上限：有 GPU 11（兼顾 NVENC session 限制），无 GPU 8（原 Mac 版同算法）
-        var ceil = hwEncode ? 11 : 8;
+        // GPU 编码 +3：QSV/AMF 一路编码 CPU 占用 ~10%，可叠加
+        // 上限：NVENC 3（会话限制）/ 其他 GPU 11 / 无 GPU 8（原 Mac 版同算法）
+        var ceil = isNvenc ? 3 : (hwEncode ? 11 : 8);
         var raw = Math.Max(1, (cores - 2) / 2) + hwBoost;
         var bounded = Math.Min(ceil, raw);
         return Math.Min(bounded, Math.Max(1, tasksCount));
@@ -49,14 +54,20 @@ public static class ConcurrencyPolicy
     {
         var cores = Environment.ProcessorCount;
         var basePart = Math.Max(1, (cores - 2) / 2);
-        var hwEncode = HardwareEncoderProbe.H264Hardware is not null;
-        var ceil = hwEncode ? 11 : 8;
+        var h264hw = HardwareEncoderProbe.H264Hardware;
+        var hwEncode = h264hw is not null;
+        var isNvenc = h264hw?.Contains("nvenc", StringComparison.OrdinalIgnoreCase) == true;
+        var ceil = isNvenc ? 3 : (hwEncode ? 11 : 8);
         var raw = basePart + (hwEncode ? 3 : 0);
         var actual = Math.Min(ceil, raw);
 
         if (!hwEncode)
         {
             return $"{actual} 路（CPU (N-2)/2 = {basePart}，无 GPU 加速）";
+        }
+        if (isNvenc)
+        {
+            return $"{actual} 路（NVENC 会话上限封 {ceil} 路，避免并发超限导致导出失败）";
         }
         return $"{actual} 路（CPU {basePart} + GPU 加成 +3，上限 {ceil}）";
     }
