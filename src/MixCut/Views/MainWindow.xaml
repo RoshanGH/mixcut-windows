@@ -64,11 +64,42 @@
                     </Grid>
                 </Border>
 
-                <!-- 设置按钮 -->
-                <Button DockPanel.Dock="Bottom" x:Name="SettingsButton" Content="⚙  设置"
-                        Margin="12,8" Padding="8,6" HorizontalContentAlignment="Left"
-                        Background="Transparent" BorderThickness="0" Cursor="Hand"
-                        Click="OnSettingsClick" />
+                <!-- 底部常驻区：微信入口（上）+ 设置（下），所有页面/项目状态下可见（issue #5 对齐 macOS） -->
+                <StackPanel DockPanel.Dock="Bottom">
+                    <!-- 微信入口：样式与设置按钮一致；点击弹出「添加我的微信」卡片 -->
+                    <Button x:Name="WeChatButton" Content="💬  微信"
+                            Margin="12,8,12,0" Padding="8,6" HorizontalContentAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            Click="OnWeChatClick" />
+                    <Button x:Name="SettingsButton" Content="⚙  设置"
+                            Margin="12,4,12,8" Padding="8,6" HorizontalContentAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            Click="OnSettingsClick" />
+                    <!-- 微信号卡片（Popup 不占布局；朝右弹避免被窗口左边界裁剪） -->
+                    <Popup x:Name="WeChatPopup" PlacementTarget="{Binding ElementName=WeChatButton}"
+                           Placement="Right" StaysOpen="False" AllowsTransparency="True"
+                           PopupAnimation="Fade" Closed="OnWeChatPopupClosed">
+                        <Border Background="White" BorderBrush="#E0E0E2" BorderThickness="1"
+                                CornerRadius="10" Padding="16" Margin="8">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" Opacity="0.18" BlurRadius="16"
+                                                  ShadowDepth="2" Direction="270" />
+                            </Border.Effect>
+                            <StackPanel Width="200">
+                                <TextBlock Text="添加我的微信" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="#1F1F23" Margin="0,0,0,12" />
+                                <TextBlock Text="微信号" FontSize="11" Foreground="#999" Margin="0,0,0,2" />
+                                <TextBox x:Name="WeChatIdBox" Text="13462890087" IsReadOnly="True"
+                                         FontSize="14" FontWeight="SemiBold" Foreground="#1D6BE5"
+                                         BorderThickness="0" Background="Transparent" Padding="0"
+                                         Margin="0,0,0,12" />
+                                <Button x:Name="CopyWeChatButton" Content="复制微信号"
+                                        Padding="0,8" Style="{StaticResource PrimaryButtonStyle}"
+                                        Click="OnCopyWeChatClick" />
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+                </StackPanel>
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12,8">

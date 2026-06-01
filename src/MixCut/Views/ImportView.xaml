@@ -9,8 +9,7 @@
         <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
             <TextBlock Text="素材导入" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
             <Button Content="选择视频文件" HorizontalAlignment="Right" Padding="18,8"
-                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
-                    Cursor="Hand" Click="OnImportClick" />
+                    Style="{StaticResource PrimaryButtonStyle}" Click="OnImportClick" />
         </Grid>
 
         <!-- 处理进度横幅 -->
@@ -196,7 +195,7 @@
                                                            FontSize="10" FontWeight="SemiBold" />
                                             </Border>
                                             <Button Grid.Column="2" Content="重试" Padding="8,2"
-                                                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                                                    Style="{StaticResource PrimaryButtonStyle}"
                                                     FontSize="10" Tag="{Binding}" Click="OnRetryClick"
                                                     Visibility="{Binding RetryVisibility}" />
                                         </Grid>

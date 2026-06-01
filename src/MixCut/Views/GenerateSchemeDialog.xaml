@@ -73,9 +73,9 @@
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
             <Button Content="取消" Padding="18,7" Margin="0,0,10,0" IsCancel="True"
-                    Background="White" BorderBrush="#CCC" />
+                    Style="{StaticResource SecondaryButtonStyle}" />
             <Button x:Name="StartButton" Content="✨ 开始生成" Padding="18,7" IsDefault="True"
-                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                    Style="{StaticResource PrimaryButtonStyle}"
                     Click="OnStart" />
         </StackPanel>
     </StackPanel>

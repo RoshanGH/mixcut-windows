@@ -138,9 +138,10 @@
                            FontSize="12" Foreground="#888"
                            HorizontalAlignment="Center" Margin="0,4,0,14" />
                 <!-- CTA：直接跳转到 Import 工作区，对齐 Mac 空状态的「立即导入」按钮 -->
-                <Button Click="OnGoImport" Padding="22,10" FontSize="13" FontWeight="SemiBold"
-                        Background="#1D6BE5" Foreground="White" BorderThickness="0"
-                        HorizontalAlignment="Center" Cursor="Hand" Margin="0,0,0,30">
+                <!-- P0-3：全局 PrimaryButtonStyle（蓝底白字 + hover/pressed/圆角），保留自定义 Padding/FontSize -->
+                <Button Click="OnGoImport" Padding="22,10" FontSize="13"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        HorizontalAlignment="Center" Margin="0,0,0,30">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="⬇" FontSize="14" Margin="0,0,6,0" />
                         <TextBlock Text="立即导入视频" />

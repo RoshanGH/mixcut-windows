@@ -253,9 +253,14 @@
                                 Cursor="Hand"
                                 ClipToBounds="True"
                                 Tag="{Binding}"
+                                RenderTransformOrigin="0.5,0.5"
                                 MouseLeftButtonDown="OnCardClicked"
                                 MouseEnter="OnCardMouseEnter"
                                 MouseLeave="OnCardMouseLeave">
+                            <!-- P0-6：hover 时卡片 subtle 缩放浮起（纯 RenderTransform，不碰画刷，零冻结崩溃风险） -->
+                            <Border.RenderTransform>
+                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                            </Border.RenderTransform>
                             <Border.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="📋 复制台词"
@@ -281,6 +286,29 @@
                                             <Setter Property="BorderBrush" Value="{StaticResource AccentBlueBrush}" />
                                             <Setter Property="BorderThickness" Value="2" />
                                         </DataTrigger>
+                                        <!-- P0-6：hover 缩放浮起 120ms（EnterActions 放大 / ExitActions 复位） -->
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Trigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX"
+                                                                         To="1.03" Duration="0:0:0.12" />
+                                                        <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                                                         To="1.03" Duration="0:0:0.12" />
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </Trigger.EnterActions>
+                                            <Trigger.ExitActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX"
+                                                                         To="1" Duration="0:0:0.12" />
+                                                        <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                                                         To="1" Duration="0:0:0.12" />
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </Trigger.ExitActions>
+                                        </Trigger>
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>

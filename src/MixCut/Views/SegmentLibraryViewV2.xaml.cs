@@ -163,16 +163,44 @@ public partial class SegmentLibraryViewV2 : UserControl, IProjectView
         var count = _vm.SelectedSegmentIds.Count;
         if (count == 0) return;
         var confirm = MessageBox.Show(
-            $"确定要删除选中的 {count} 个分镜吗？此操作不可恢复。",
+            $"确定要删除选中的 {count} 个分镜吗？删除后可按 Ctrl+Z 撤销。",
             "确认批量删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.OK) return;
-        _vm.DeleteSelectedSegments();
+        // P0-16：删除失败（DB 保存异常）时不谎报成功，给人话提示 + 重试入口。
+        var deleted = _vm.DeleteSelectedSegments();
+        if (deleted is null)
+        {
+            Components.ToastService.Show("删除失败，请重试", Components.ToastStyle.Error);
+            return;
+        }
+        RefreshAfterSegmentChange();
+
+        // P0-10：压入撤销栈，Ctrl+Z 可一键恢复被删分镜。
+        if (deleted.Count > 0)
+        {
+            Infrastructure.UndoStack.UndoManager.Shared.Push(
+                new Infrastructure.UndoStack.DelegateUndoAction(
+                    $"删除 {deleted.Count} 个分镜",
+                    () =>
+                    {
+                        var n = _vm.RestoreSegments(deleted);
+                        RefreshAfterSegmentChange();
+                        Components.ToastService.Show(
+                            n > 0 ? $"已恢复 {n} 个分镜" : "恢复失败，请重试",
+                            n > 0 ? Components.ToastStyle.Success : Components.ToastStyle.Error);
+                    }));
+        }
+        Components.ToastService.Show($"已删除 {count} 个分镜 · Ctrl+Z 撤销", Components.ToastStyle.Warning);
+    }
+
+    /// <summary>分镜增删后统一刷新分组/类型 chip/统计/工具栏/空态（删除与撤销恢复共用）。</summary>
+    private void RefreshAfterSegmentChange()
+    {
         _vm.RebuildGroups();
         BuildTypeChips();
         UpdateStats();
         UpdateSelectionToolbar();
         UpdateEmptyState();
-        Components.ToastService.Show($"已删除 {count} 个分镜", Components.ToastStyle.Warning);
     }
 
     private void OnSelectionChanged()

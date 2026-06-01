@@ -127,9 +127,16 @@
                     Background="#9333EA" Foreground="White" BorderThickness="0"
                     Cursor="Hand" Click="OnExportAllClick" />
 
-            <!-- 进度 -->
+            <!-- 进度（QW-11：标题行右侧放「取消」按钮，长任务可随时中断，告别失控感） -->
             <StackPanel x:Name="ProgressSection" Visibility="Collapsed" Margin="0,18,0,0">
-                <TextBlock x:Name="ProgressTitle" FontSize="12" FontWeight="SemiBold" />
+                <Grid>
+                    <TextBlock x:Name="ProgressTitle" FontSize="12" FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <Button x:Name="CancelExportButton" Content="取消" Padding="12,4"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Background="White" BorderBrush="#CCC" Cursor="Hand"
+                            Click="OnCancelExportClick" />
+                </Grid>
                 <TextBlock x:Name="ProgressStatusText" FontSize="11" Foreground="#666"
                            Margin="0,4,0,4" />
                 <ProgressBar x:Name="ProgressBar" Height="6" Maximum="1" />

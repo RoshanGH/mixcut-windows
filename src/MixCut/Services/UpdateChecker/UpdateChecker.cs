@@ -23,6 +23,11 @@ public sealed class UpdateChecker
     private const string GiteeUrl = "https://gitee.com/api/v5/repos/jinxiushanhehao/mixcut-windows/releases/latest";
     private const string GiteeTagPrefix = "https://gitee.com/jinxiushanhehao/mixcut-windows/releases/tag/";
 
+    // QW-6：单例 HttpClient。原来每次检查都 new HttpClient() 是 .NET 反模式 ——
+    // socket TIME_WAIT 累积可能耗尽 ephemeral port。per-request header 用 HttpRequestMessage
+    // 设，不碰 DefaultRequestHeaders（共享实例下线程安全 + 避免 header 污染）。
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(TimeoutSec) };
+
     private readonly ILogger<UpdateChecker> _logger;
 
     public UpdateChecker(ILogger<UpdateChecker> logger)
@@ -41,10 +46,12 @@ public sealed class UpdateChecker
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(TimeoutSec));
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MixCutWindows", "1.0"));
-            var json = await http.GetStringAsync(GitHubUrl, cts.Token);
+            using var req = new HttpRequestMessage(HttpMethod.Get, GitHubUrl);
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+            req.Headers.UserAgent.Add(new ProductInfoHeaderValue("MixCutWindows", "1.0"));
+            using var resp = await Http.SendAsync(req, cts.Token);
+            resp.EnsureSuccessStatusCode();
+            var json = await resp.Content.ReadAsStringAsync(cts.Token);
             var release = JsonSerializer.Deserialize<GitHubRelease>(json);
             if (release is null || string.IsNullOrEmpty(release.TagName))
             {
@@ -72,8 +79,7 @@ public sealed class UpdateChecker
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(TimeoutSec));
-            using var http = new HttpClient();
-            var json = await http.GetStringAsync(GiteeUrl, cts.Token);
+            var json = await Http.GetStringAsync(GiteeUrl, cts.Token);
             var release = JsonSerializer.Deserialize<GiteeRelease>(json);
             if (release is null || string.IsNullOrEmpty(release.TagName))
             {

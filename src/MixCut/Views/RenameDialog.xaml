@@ -11,9 +11,10 @@
         <TextBlock Text="新名称" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
         <TextBox x:Name="NameBox" Padding="6,5" FontSize="13" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="取消" Padding="18,7" Margin="0,0,10,0" IsCancel="True" />
+            <Button Content="取消" Padding="18,7" Margin="0,0,10,0" IsCancel="True"
+                    Style="{StaticResource SecondaryButtonStyle}" />
             <Button x:Name="OkButton" Content="保存" Padding="18,7" IsDefault="True"
-                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                    Style="{StaticResource PrimaryButtonStyle}"
                     Click="OnOk" />
         </StackPanel>
     </StackPanel>

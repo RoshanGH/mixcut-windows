@@ -44,7 +44,7 @@
                                    TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center" />
                         <Button Grid.Column="1" Content="选择…" Padding="14,3" Margin="8,0,0,0"
-                                Background="White" BorderBrush="#CCC"
+                                Style="{StaticResource SecondaryButtonStyle}"
                                 Click="OnPickDirectory" />
                     </Grid>
                 </Border>
@@ -165,14 +165,15 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Button Grid.Column="0" x:Name="OpenFolderButton" Content="📂 打开输出目录"
-                    Padding="12,5" Background="White" BorderBrush="#CCC"
+                    Padding="12,5" Style="{StaticResource SecondaryButtonStyle}"
                     Click="OnOpenOutputFolder" Visibility="Collapsed" />
             <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <!-- QW-9：IsCancel 让 ESC 触发取消（导出中→中断整批 ffmpeg，配置态→关闭对话框）。 -->
                 <Button x:Name="CancelButton" Content="取消" Padding="14,5" Margin="0,0,8,0"
-                        Background="White" BorderBrush="#CCC"
-                        Click="OnCancel" />
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        IsCancel="True" Click="OnCancel" />
                 <Button x:Name="PrimaryButton" Content="开始导出" Padding="16,5"
-                        Background="#1D6BE5" Foreground="White" BorderThickness="0"
+                        Style="{StaticResource PrimaryButtonStyle}"
                         IsDefault="True" Click="OnPrimary" />
             </StackPanel>
         </Grid>

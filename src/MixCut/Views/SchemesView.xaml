@@ -28,8 +28,8 @@
                         </Border>
                     </StackPanel>
                     <Button Grid.Column="1" x:Name="GenerateButton" Content="✨ 生成"
-                            Padding="12,5" Background="#1D6BE5" Foreground="White"
-                            BorderThickness="0" Cursor="Hand" Click="OnOpenGenerateDialog" />
+                            Padding="12,5" Style="{StaticResource PrimaryButtonStyle}"
+                            Click="OnOpenGenerateDialog" />
                 </Grid>
             </Border>
 

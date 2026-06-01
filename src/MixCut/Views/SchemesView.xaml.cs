@@ -137,11 +137,30 @@ public partial class SchemesView : UserControl, IProjectView
             // 完整 stack 写日志（File sink 已在 App.xaml.cs 配置，Log.Error 直接写盘）。
             Serilog.Log.Error(ex, "[SchemesView.OnOpenGenerateDialog] 异常: {Message}", ex.Message);
 
-            _vm.ErrorMessage = $"生成方案时出错：{ex.Message}";
+            var friendly = TranslateGenerateError(ex);
+            _vm.ErrorMessage = $"生成方案时出错：{friendly}";
+            // QW-1：不再把 C# stack trace / 异常类型 / 命名空间直接弹给用户（这是全项目唯一一处泄漏）。
+            // 翻译成人话 + 给出可操作的下一步；完整 stack 已由上面的 Serilog.Log.Error 写盘。
             MessageBox.Show(
-                $"生成方案失败：\n\n{ex.Message}\n\n类型：{ex.GetType().FullName}\n\n堆栈：\n{ex.StackTrace}",
-                "MixCut", MessageBoxButton.OK, MessageBoxImage.Error);
+                $"生成方案失败。\n\n{friendly}\n\n建议操作：\n" +
+                "• 检查「设置 → API」中的 Key 是否有效\n" +
+                "• 检查网络连接是否正常\n" +
+                "• 如多次失败，请联系开发者并附上日志",
+                "方案生成失败", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    /// <summary>把方案生成异常翻译成用户能看懂的人话（QW-1）。完整堆栈仍写日志，不弹给用户。</summary>
+    private static string TranslateGenerateError(Exception ex)
+    {
+        var msg = ex.Message ?? string.Empty;
+        if (msg.Contains("401") || msg.Contains("Unauthorized")) return "API Key 无效或已过期，请到「设置 → API」检查。";
+        if (msg.Contains("403") || msg.Contains("Forbidden")) return "API 访问被拒绝，请确认 Key 权限或额度是否充足。";
+        if (msg.Contains("429")) return "请求过于频繁，请稍后再试。";
+        if (ex is TaskCanceledException || msg.Contains("timeout", StringComparison.OrdinalIgnoreCase) || msg.Contains("超时"))
+            return "请求超时，请检查网络连接后重试。";
+        if (ex is System.Net.Http.HttpRequestException) return "网络请求失败，请检查网络连接。";
+        return string.IsNullOrWhiteSpace(msg) ? "发生未知错误。" : msg;
     }
 
     // ---- 策略列表 ----
@@ -439,16 +458,35 @@ public partial class SchemesView : UserControl, IProjectView
             deleteItem.Click += (_, _) =>
             {
                 var confirm = MessageBox.Show(
-                    $"删除策略「{strategy.Name}」及其全部 {strategy.SchemeCount} 个变体？",
+                    $"删除策略「{strategy.Name}」及其全部 {strategy.SchemeCount} 个变体？删除后可按 Ctrl+Z 撤销。",
                     "确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-                if (confirm == MessageBoxResult.OK)
+                if (confirm != MessageBoxResult.OK) return;
+                var snapshot = _vm.DeleteStrategy(strategy);
+                RefreshStrategyList();
+                if (_vm.SelectedScheme is null)
                 {
-                    _vm.DeleteStrategy(strategy);
-                    RefreshStrategyList();
-                    if (_vm.SelectedScheme is null)
-                    {
-                        RefreshDetail();
-                    }
+                    RefreshDetail();
+                }
+                if (snapshot is not null)
+                {
+                    // P0-10：压入撤销栈，Ctrl+Z 恢复整组策略（含全部变体 + 方案分镜）。
+                    Infrastructure.UndoStack.UndoManager.Shared.Push(
+                        new Infrastructure.UndoStack.DelegateUndoAction(
+                            $"删除策略「{snapshot.Name}」",
+                            () =>
+                            {
+                                if (_vm.RestoreStrategy(snapshot))
+                                {
+                                    RefreshStrategyList();
+                                    RefreshDetail();
+                                    Components.ToastService.Show("已恢复策略", Components.ToastStyle.Success);
+                                }
+                                else
+                                {
+                                    Components.ToastService.Show("恢复失败，请重试", Components.ToastStyle.Error);
+                                }
+                            }));
+                    Components.ToastService.Show("已删除策略 · Ctrl+Z 撤销", Components.ToastStyle.Warning);
                 }
             };
         }
@@ -531,7 +569,11 @@ public partial class SchemesView : UserControl, IProjectView
                 System.Windows.Clipboard.SetText(scheme.Name ?? string.Empty);
                 Components.ToastService.Show("方案名已复制", Components.ToastStyle.Success);
             }
-            catch { /* ignore */ }
+            catch (Exception clipEx)
+            {
+                // QW-8：剪贴板被其他程序独占时 SetText 会抛 —— 记 Warning 便于诊断，不再静默吞。
+                Serilog.Log.Warning(clipEx, "[SchemesView] 复制方案名到剪贴板失败（右键菜单）");
+            }
         };
         menu.Items.Add(copyItem);
         menu.Items.Add(new Separator());
@@ -539,18 +581,36 @@ public partial class SchemesView : UserControl, IProjectView
         var deleteItem = new MenuItem { Header = "🗑 删除变体", Tag = scheme };
         deleteItem.Click += (_, _) =>
         {
-            var confirm = MessageBox.Show($"删除变体「{scheme.Name}」？",
+            var confirm = MessageBox.Show($"删除变体「{scheme.Name}」？删除后可按 Ctrl+Z 撤销。",
                 "确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-            if (confirm == MessageBoxResult.OK)
+            if (confirm != MessageBoxResult.OK) return;
+            var snapshot = _vm.DeleteScheme(scheme);
+            RefreshStrategyList();
+            if (_vm.SelectedScheme is null)
             {
-                _vm.DeleteScheme(scheme);
-                RefreshStrategyList();
-                if (_vm.SelectedScheme is null)
-                {
-                    RefreshDetail();
-                }
-                Components.ToastService.Show($"已删除变体「{scheme.Name}」", Components.ToastStyle.Warning);
+                RefreshDetail();
             }
+            if (snapshot is not null)
+            {
+                // P0-10：压入撤销栈，Ctrl+Z 恢复该变体（含方案分镜）。
+                Infrastructure.UndoStack.UndoManager.Shared.Push(
+                    new Infrastructure.UndoStack.DelegateUndoAction(
+                        $"删除变体「{snapshot.Name}」",
+                        () =>
+                        {
+                            if (_vm.RestoreScheme(snapshot))
+                            {
+                                RefreshStrategyList();
+                                RefreshDetail();
+                                Components.ToastService.Show("已恢复变体", Components.ToastStyle.Success);
+                            }
+                            else
+                            {
+                                Components.ToastService.Show("恢复失败，请重试", Components.ToastStyle.Error);
+                            }
+                        }));
+            }
+            Components.ToastService.Show($"已删除变体「{scheme.Name}」 · Ctrl+Z 撤销", Components.ToastStyle.Warning);
         };
         menu.Items.Add(deleteItem);
         return menu;
@@ -634,7 +694,11 @@ public partial class SchemesView : UserControl, IProjectView
                 revertTimer.Tick += (_, _) => { copyNameBtn.Content = "📋"; revertTimer.Stop(); };
                 revertTimer.Start();
             }
-            catch { /* ignore */ }
+            catch (Exception clipEx)
+            {
+                // QW-8：剪贴板被其他程序独占时 SetText 会抛 —— 记 Warning 便于诊断，不再静默吞。
+                Serilog.Log.Warning(clipEx, "[SchemesView] 复制方案名到剪贴板失败（详情面板）");
+            }
         };
         Grid.SetColumn(copyNameBtn, 1);
         headerGrid.Children.Add(copyNameBtn);

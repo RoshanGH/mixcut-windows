@@ -45,6 +45,9 @@ public partial class ProjectViewModel : ObservableObject
         var list = db.Projects
             .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
             .Include(p => p.Schemes)
+            // P0-8：多集合 Include 默认 SingleQuery 会笛卡尔积爆炸（videos×segments×schemes），
+            // 项目/分镜多时启动卡顿。AsSplitQuery 拆成多条查询，结果完全一致、零消费点改动。
+            .AsSplitQuery()
             .AsNoTracking()
             .Where(p => p.Status != ProjectStatus.Archived)
             .OrderByDescending(p => p.UpdatedAt)
@@ -111,6 +114,7 @@ public partial class ProjectViewModel : ObservableObject
         using var db = _dbFactory.CreateDbContext();
         var tracked = db.Projects
             .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
+            .AsSplitQuery() // P0-8：嵌套集合拆分查询，避免笛卡尔放大
             .FirstOrDefault(p => p.Id == project.Id);
         if (tracked is null)
         {

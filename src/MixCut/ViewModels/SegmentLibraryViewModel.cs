@@ -310,30 +310,46 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         _numberByVideo = result;
     }
 
-    /// <summary>批量删除当前选中的分镜。对齐 macOS deleteSelectedSegments。</summary>
-    public void DeleteSelectedSegments()
+    /// <summary>
+    /// 批量删除选中分镜。返回被删分镜的快照（供 P0-10 撤销）；返回 null 表示保存失败。
+    /// <para>P0-16：① 显式事务包裹（SQLite 下全删或全不删）；② 保存失败时<b>不</b>改内存集合，
+    /// 避免「DB 没删成功但 UI 显示删了」的不一致，由调用方据返回值提示，杜绝静默假成功。</para>
+    /// <para>P0-10：删除前 clone 一份脱离 EF 跟踪的快照返回，调用方压入 UndoManager 供 Ctrl+Z 恢复。</para>
+    /// </summary>
+    public IReadOnlyList<Segment>? DeleteSelectedSegments()
     {
-        if (_context is null) return;
+        if (_context is null) return null;
         var idsToDelete = SelectedSegmentIds.ToHashSet();
-        if (idsToDelete.Count == 0) return;
+        if (idsToDelete.Count == 0) return Array.Empty<Segment>();
 
         var segs = _segments.Where(s => idsToDelete.Contains(s.Id)).ToList();
-        foreach (var seg in segs)
-        {
-            if (SelectedSegment?.Id == seg.Id) SelectedSegment = null;
-            var tracked = _context.Segments.FirstOrDefault(s => s.Id == seg.Id);
-            if (tracked is not null)
-            {
-                _context.Segments.Remove(tracked);
-            }
-        }
+        // P0-10：删除前先快照（脱离导航属性，仅标量 + VideoId），供撤销重建。
+        var snapshots = segs.Select(Infrastructure.UndoStack.UndoClone.CloneSegment).ToList();
         try
         {
+            using var tx = _context.Database.BeginTransaction();
+            foreach (var seg in segs)
+            {
+                var tracked = _context.Segments.FirstOrDefault(s => s.Id == seg.Id);
+                if (tracked is not null)
+                {
+                    _context.Segments.Remove(tracked);
+                }
+            }
             _context.SaveChanges();
+            tx.Commit();
         }
         catch (Exception ex)
         {
-            _logger.LogError("批量删除分镜保存失败: {Msg}", ex.Message);
+            // 保存失败：DB 已回滚，内存集合保持原样 → UI 仍显示这些分镜（与 DB 一致）。
+            _logger.LogError("批量删除分镜保存失败，已回滚，内存不变: {Msg}", ex.Message);
+            return null;
+        }
+
+        // 仅在 DB 删除确认成功后才同步内存与选中态。
+        foreach (var seg in segs)
+        {
+            if (SelectedSegment?.Id == seg.Id) SelectedSegment = null;
         }
         _segments.RemoveAll(s => idsToDelete.Contains(s.Id));
         SelectedSegmentIds.Clear();
@@ -341,7 +357,47 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         SelectionChanged?.Invoke();
         RecomputeNumberByVideo();
         ApplyFilter();
+        return snapshots;
     }
+
+    /// <summary>
+    /// P0-10：撤销分镜删除 —— 把快照重新插回 DB 并重查列表。返回实际恢复的数量。
+    /// 仅恢复分镜实体本身（标量 + VideoId），不恢复级联删掉的 SchemeSegment 链接
+    /// （用户通常先删分镜再生成方案；恢复珍贵的 AI 分析结果才是核心诉求）。
+    /// </summary>
+    public int RestoreSegments(IReadOnlyList<Segment> snapshots)
+    {
+        if (_context is null || CurrentProject is null || snapshots.Count == 0)
+        {
+            return 0;
+        }
+        var restored = 0;
+        try
+        {
+            using var tx = _context.Database.BeginTransaction();
+            foreach (var snap in snapshots)
+            {
+                // 防重：DB 已存在同 Id（极端情况）跳过，避免主键冲突。
+                if (_context.Segments.Any(s => s.Id == snap.Id))
+                {
+                    continue;
+                }
+                _context.Segments.Add(Infrastructure.UndoStack.UndoClone.CloneSegment(snap));
+                restored++;
+            }
+            _context.SaveChanges();
+            tx.Commit();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[Undo] 恢复分镜失败，已回滚: {Msg}", ex.Message);
+            return 0;
+        }
+        // 重查（恢复的分镜需重新带上 Video 导航属性 + 重算编号 + 刷新筛选）。
+        LoadSegments(CurrentProject);
+        return restored;
+    }
+
 
     /// <summary>
     /// 按语义类型统计分镜数量（用于类型筛选 chip 显示徽章 + 0 数量降饱和）。
@@ -505,9 +561,10 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         {
             return;
         }
-        segment.StartTime = newStart;
-        ReExtractText(segment);
-        Save();
+        if (!ApplyTimeEdit(segment, newStart, segment.EndTime))
+        {
+            return;
+        }
         RequestPlay(segment, newStart, Math.Min(newStart + 2, segment.EndTime));
     }
 
@@ -520,9 +577,10 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         {
             return;
         }
-        segment.EndTime = newEnd;
-        ReExtractText(segment);
-        Save();
+        if (!ApplyTimeEdit(segment, segment.StartTime, newEnd))
+        {
+            return;
+        }
         RequestPlay(segment, Math.Max(segment.StartTime, newEnd - 1), newEnd);
     }
 
@@ -534,9 +592,10 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         {
             return;
         }
-        segment.StartTime = clamped;
-        ReExtractText(segment);
-        Save();
+        if (!ApplyTimeEdit(segment, clamped, segment.EndTime))
+        {
+            return;
+        }
         RequestPlay(segment, clamped, Math.Min(clamped + 2, segment.EndTime));
     }
 
@@ -549,10 +608,37 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         {
             return;
         }
-        segment.EndTime = clamped;
-        ReExtractText(segment);
-        Save();
+        if (!ApplyTimeEdit(segment, segment.StartTime, clamped))
+        {
+            return;
+        }
         RequestPlay(segment, Math.Max(segment.StartTime, clamped - 1), clamped);
+    }
+
+    /// <summary>
+    /// P0-17：统一时间编辑落盘。改内存 + 重提台词后立即保存；保存失败则<b>整体回滚</b>
+    /// （StartTime/EndTime/Text 全部还原），避免「UI 显示已改但 DB 没存、刷新后回退」的静默失败。
+    /// 返回 true 表示已成功持久化。
+    /// </summary>
+    private bool ApplyTimeEdit(Segment segment, double newStart, double newEnd)
+    {
+        var oldStart = segment.StartTime;
+        var oldEnd = segment.EndTime;
+        var oldText = segment.Text;
+
+        segment.StartTime = newStart;
+        segment.EndTime = newEnd;
+        ReExtractText(segment);
+
+        if (Save())
+        {
+            return true;
+        }
+        // 保存失败：还原内存值，保持与 DB 一致（用户会看到微调"弹回"，即未生效的信号）。
+        segment.StartTime = oldStart;
+        segment.EndTime = oldEnd;
+        segment.Text = oldText;
+        return false;
     }
 
     /// <summary>根据当前时间范围重新从 ASR 提取台词（中心点匹配，避免跨段重复）。</summary>
@@ -605,15 +691,18 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         return new SegmentStatistics(_segments.Count, byType, avg);
     }
 
-    private void Save()
+    /// <summary>持久化当前改动。返回 false 表示保存失败（调用方应回滚内存值，避免 UI 与 DB 不一致）。</summary>
+    private bool Save()
     {
         try
         {
             _context?.SaveChanges();
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError("分镜保存失败: {Message}", ex.Message);
+            return false;
         }
     }
 

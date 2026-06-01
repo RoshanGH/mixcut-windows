@@ -185,6 +185,14 @@ public partial class BatchExportDialog : Window
             DialogResult = false;
             Close();
         }
+        finally
+        {
+            // P0-23：无论成功/取消/异常都释放 CTS，避免每次导出累积一个未释放的 SafeHandle
+            // （批量导出失败几十次后内核句柄耗尽）。此时 await 已结束，_cts 不会再被用到；
+            // OnCancel 里的 _cts?.Cancel() 对 null 安全。
+            _cts?.Dispose();
+            _cts = null;
+        }
     }
 
     private void OnProgress(SegmentBatchExportProgress p)

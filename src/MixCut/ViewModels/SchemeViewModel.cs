@@ -17,6 +17,7 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
     private readonly ILogger<SchemeViewModel> _logger;
 
     private MixCutDbContext? _context;
+    private Project? _loadedProject; // P0-10：当前加载的项目，撤销恢复后重查用
 
     /// <summary>项目的所有策略。</summary>
     public ObservableCollection<MixStrategy> Strategies { get; } = new();
@@ -81,6 +82,7 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
     {
         _context?.Dispose();
         _context = _dbFactory.CreateDbContext();
+        _loadedProject = project; // P0-10：记住当前项目，撤销恢复后重查用
 
         var projectId = project.Id;
         // 不能 ThenInclude(seg => seg.Video) —— EF Core fix-up 自动填充反向导航，重复 Include 会
@@ -88,6 +90,9 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         // 通过单独预加载 Videos 让跟踪上下文自动 fix-up segment.Video。
         var strategies = _context.Strategies
             .Include(s => s.Schemes).ThenInclude(sc => sc.SchemeSegments).ThenInclude(ss => ss.Segment!)
+            // P0-8：Schemes×SchemeSegments 嵌套集合 SingleQuery 会笛卡尔放大；拆分查询更快、结果一致。
+            // 仍是跟踪查询，identity map 保证 segment.Video 反向 fix-up（见上）照常工作。
+            .AsSplitQuery()
             .Where(s => s.ProjectId == projectId)
             .OrderBy(s => s.CreatedAt)
             .ToList();
@@ -124,13 +129,23 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         _context?.Dispose();
         _context = _dbFactory.CreateDbContext();
 
+        Project? dbProject = null;
         try
         {
             // 注意：Segments.Video 是反向导航，EF Core 会自动 fix-up，不能再 ThenInclude
             // （会触发 NavigationBaseIncludeIgnored 警告并升级为 InvalidOperationException）。
-            var dbProject = _context.Projects
+            // P0-25：生成是异步任务，期间用户可能删掉项目 → 原 First() 会抛 InvalidOperationException
+            // 让进程崩。改 FirstOrDefault + null 检查，友好提示并安全退出。
+            dbProject = _context.Projects
                 .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
-                .First(p => p.Id == project.Id);
+                .AsSplitQuery() // P0-8：嵌套集合拆分查询，避免笛卡尔放大
+                .FirstOrDefault(p => p.Id == project.Id);
+            if (dbProject is null)
+            {
+                ErrorMessage = "项目已被删除，已取消生成";
+                _logger.LogWarning("[SchemeGen] 项目在生成前已被删除，取消生成 project={Id}", project.Id);
+                return;
+            }
 
             dbProject.Status = ProjectStatus.Generating;
             _context.SaveChanges();
@@ -263,15 +278,50 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
             LoadSchemes(project);
             GenerationProgress = $"生成完成：{Strategies.Count} 个策略，共 {Schemes.Count} 个视频方案";
         }
+        catch (OperationCanceledException)
+        {
+            // 用户主动取消（ESC / 取消按钮）—— 不当作错误，但必须回滚项目状态避免卡 Generating。
+            ErrorMessage = null;
+            RollbackGeneratingStatus(dbProject);
+            _logger.LogInformation("[SchemeGen] 用户取消生成，已回滚项目状态 project={Id}", dbProject?.Id);
+        }
         catch (Exception ex)
         {
             ErrorMessage = $"方案生成失败: {ex.Message}";
             // 用 LogError 的 exception 重载，stack trace 才会进日志（之前写法只塞了 ex.ToString()）。
             _logger.LogError(ex, "方案生成失败: {Message}", ex.Message);
+            // P0-22/P1-72：失败后必须回滚 ProjectStatus，否则项目永久卡在「生成方案中」，
+            // 用户无法再次生成也看不到任何出口（无解死锁）。
+            RollbackGeneratingStatus(dbProject);
         }
         finally
         {
             IsGenerating = false;
+        }
+    }
+
+    /// <summary>
+    /// 把卡在 Generating 的项目状态回滚到 Ready（生成失败 / 用户取消时调用）。
+    /// 防止项目永久卡在「生成方案中」导致用户无法再次生成（P0-22/P1-72）。
+    /// </summary>
+    private void RollbackGeneratingStatus(Project? dbProject)
+    {
+        if (dbProject is null || _context is null)
+        {
+            return;
+        }
+        try
+        {
+            if (dbProject.Status == ProjectStatus.Generating)
+            {
+                dbProject.Status = ProjectStatus.Ready;
+                _context.SaveChanges();
+                _logger.LogInformation("[SchemeGen] 已回滚项目状态 Generating→Ready project={Id}", dbProject.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("[SchemeGen] 回滚项目状态失败: {Msg}", ex.Message);
         }
     }
 
@@ -359,47 +409,94 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
 
     // ---- 删除 ----
 
-    /// <summary>删除整个策略及其所有变体。</summary>
-    public void DeleteStrategy(MixStrategy strategy)
+    /// <summary>
+    /// 删除整个策略及其所有变体。返回策略快照（含全部 Scheme + SchemeSegment）供 P0-10 撤销，
+    /// 未删成功返回 null。
+    /// </summary>
+    public MixStrategy? DeleteStrategy(MixStrategy strategy)
     {
+        if (_context is null) return null;
+        // 重查带全图（Schemes + SchemeSegments），保证快照完整可恢复。
+        var tracked = _context.Strategies
+            .Include(s => s.Schemes).ThenInclude(sc => sc.SchemeSegments)
+            .FirstOrDefault(s => s.Id == strategy.Id);
+        if (tracked is null) return null;
+
+        var snapshot = Infrastructure.UndoStack.UndoClone.CloneStrategy(tracked);
+
         if (SelectedStrategy?.Id == strategy.Id)
         {
             SelectedStrategy = null;
             SelectedScheme = null;
         }
-        if (_context is not null)
-        {
-            var tracked = _context.Strategies.FirstOrDefault(s => s.Id == strategy.Id);
-            if (tracked is not null)
-            {
-                _context.Strategies.Remove(tracked);
-                SaveContext();
-            }
-        }
+        _context.Strategies.Remove(tracked);
+        SaveContext();
+
         var existing = Strategies.FirstOrDefault(s => s.Id == strategy.Id);
         if (existing is not null)
         {
             Strategies.Remove(existing);
         }
+        return snapshot;
     }
 
-    /// <summary>删除单个方案变体。</summary>
-    public void DeleteScheme(MixScheme scheme)
+    /// <summary>删除单个方案变体。返回方案快照（含 SchemeSegment）供 P0-10 撤销，未删成功返回 null。</summary>
+    public MixScheme? DeleteScheme(MixScheme scheme)
     {
+        if (_context is null) return null;
+        var tracked = _context.Schemes
+            .Include(s => s.SchemeSegments)
+            .FirstOrDefault(s => s.Id == scheme.Id);
+        if (tracked is null) return null;
+
+        var snapshot = Infrastructure.UndoStack.UndoClone.CloneScheme(tracked);
+
         if (SelectedScheme?.Id == scheme.Id)
         {
             SelectedScheme = null;
         }
-        if (_context is not null)
+        _context.Schemes.Remove(tracked);
+        SaveContext();
+        tracked.Strategy?.Schemes.Remove(tracked);
+        return snapshot;
+    }
+
+    /// <summary>P0-10：撤销删除策略 —— 把策略整图（含变体 + 方案分镜）重新插回 DB 并重查。</summary>
+    public bool RestoreStrategy(MixStrategy snapshot)
+    {
+        if (_context is null || _loadedProject is null) return false;
+        try
         {
-            var tracked = _context.Schemes.FirstOrDefault(s => s.Id == scheme.Id);
-            if (tracked is not null)
-            {
-                _context.Schemes.Remove(tracked);
-                SaveContext();
-                tracked.Strategy?.Schemes.Remove(tracked);
-            }
+            if (_context.Strategies.Any(s => s.Id == snapshot.Id)) return false;
+            _context.Strategies.Add(Infrastructure.UndoStack.UndoClone.CloneStrategy(snapshot));
+            SaveContext();
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Undo] 恢复策略失败");
+            return false;
+        }
+        LoadSchemes(_loadedProject);
+        return true;
+    }
+
+    /// <summary>P0-10：撤销删除方案变体 —— 把方案（含方案分镜）重新插回 DB 并重查。</summary>
+    public bool RestoreScheme(MixScheme snapshot)
+    {
+        if (_context is null || _loadedProject is null) return false;
+        try
+        {
+            if (_context.Schemes.Any(s => s.Id == snapshot.Id)) return false;
+            _context.Schemes.Add(Infrastructure.UndoStack.UndoClone.CloneScheme(snapshot));
+            SaveContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Undo] 恢复方案失败");
+            return false;
+        }
+        LoadSchemes(_loadedProject);
+        return true;
     }
 
     // ---- 分镜编辑 ----

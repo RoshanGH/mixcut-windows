@@ -173,8 +173,11 @@ public sealed class ASRService
 
         // 动态超时：large-v3-turbo 在 8 核 CPU 大约 0.5x 实时，给 4x 余量。
         // 起跳 5 分钟，最长 30 分钟（防 1h+ 长视频锁死）。
-        var dynTimeout = TimeSpan.FromSeconds(
-            Math.Clamp(videoDurationSec * 4, 300, 1800));
+        // P0-27：duration ≤ 0 表示元数据提取失败（损坏/异常容器），按 duration*4 会得到 5min 下限，
+        // 大文件必然误超时。此时无从估算真实时长，直接给 30min 上限保守值，宁可多等也别冤杀。
+        var dynTimeout = videoDurationSec > 0
+            ? TimeSpan.FromSeconds(Math.Clamp(videoDurationSec * 4, 300, 1800))
+            : TimeSpan.FromSeconds(1800);
 
         // 留 2 个逻辑核给系统 + UI（之前吃满所有核导致风扇狂转）。
         // 8 核 → 6 线程；4 核 → 2 线程；2 核 → 2 线程。

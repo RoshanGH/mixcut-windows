@@ -7,6 +7,7 @@ using Microsoft.Win32;
 using MixCut.Infrastructure;
 using MixCut.Models;
 using MixCut.Services.Export;
+using MixCut.Utilities;
 using MixCut.ViewModels;
 
 namespace MixCut.Views;
@@ -16,15 +17,21 @@ public partial class ExportView : UserControl, IProjectView
 {
     private readonly SchemeViewModel _schemeVM;
     private readonly ExportService _exportService;
+    private readonly AppSettings _settings;
     private string? _lastOutputDir;
+
+    /// <summary>QW-11：批量导出的取消令牌。ExportService 早就支持 CancellationToken，
+    /// 但 view 从来没传过 —— 现在接上，「取消」按钮 / ESC 能真正中断长任务。</summary>
+    private CancellationTokenSource? _exportCts;
 
     /// <summary>用户勾选的待导出方案 ID 集合。LoadProject 时默认全选当前项目所有方案。</summary>
     private readonly HashSet<Guid> _selectedSchemeIds = new();
 
-    public ExportView(SchemeViewModel schemeVM, ExportService exportService)
+    public ExportView(SchemeViewModel schemeVM, ExportService exportService, AppSettings settings)
     {
         _schemeVM = schemeVM;
         _exportService = exportService;
+        _settings = settings;
         InitializeComponent();
 
         foreach (var r in Enum.GetValues<ExportResolution>())
@@ -318,6 +325,12 @@ public partial class ExportView : UserControl, IProjectView
         }
 
         var dialog = new OpenFolderDialog { Title = "选择输出文件夹" };
+        // QW-3：跨会话记忆上次导出目录，免去每次重新点开 5 层目录。
+        if (!string.IsNullOrEmpty(_settings.LastExportDirForSchemes)
+            && Directory.Exists(_settings.LastExportDirForSchemes))
+        {
+            dialog.InitialDirectory = _settings.LastExportDirForSchemes;
+        }
         if (dialog.ShowDialog() != true)
         {
             return;
@@ -325,6 +338,7 @@ public partial class ExportView : UserControl, IProjectView
 
         var outputDir = dialog.FolderName;
         _lastOutputDir = outputDir;
+        _settings.LastExportDirForSchemes = outputDir;   // QW-3：记住本次选择，下次默认定位到这里
 
         // 准备所有导出任务：过滤掉无效方案 + 计算文件名。
         var config = BuildConfig();
@@ -353,6 +367,26 @@ public partial class ExportView : UserControl, IProjectView
             return;
         }
 
+        // QW-4：导出前检查文件冲突。目录里已存在同名 .mp4（上次导出 / 别的项目）会被静默覆盖，
+        // 用户数小时的渲染结果可能瞬间消失。列出冲突文件让用户确认后再继续。
+        var conflicts = tasks.Where(t => File.Exists(t.OutputPath)).ToList();
+        if (conflicts.Count > 0)
+        {
+            var preview = string.Join("\n",
+                conflicts.Take(5).Select(c => "• " + Path.GetFileName(c.OutputPath)));
+            if (conflicts.Count > 5)
+            {
+                preview += $"\n…还有 {conflicts.Count - 5} 个";
+            }
+            var confirm = MessageBox.Show(
+                $"以下 {conflicts.Count} 个文件已存在，继续导出会覆盖它们：\n\n{preview}\n\n确定要覆盖吗？",
+                "文件已存在", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.OK)
+            {
+                return;
+            }
+        }
+
         // v0.5.0：走 ConcurrencyPolicy 统一策略，有 GPU 编码时加成（NVENC/QSV/AMF +3 路）。
         var concurrency = Infrastructure.ConcurrencyPolicy.MaxExportConcurrency(tasks.Count);
 
@@ -362,23 +396,35 @@ public partial class ExportView : UserControl, IProjectView
         ProgressTitle.Text = $"批量导出（共 {tasks.Count} 个 · {concurrency} 路并行）";
         ExportAllButton.IsEnabled = false;
 
+        // QW-11：每次导出新建取消令牌，「取消」按钮 / ESC 触发后整批 ffmpeg 立即收手。
+        _exportCts?.Dispose();
+        _exportCts = new CancellationTokenSource();
+        var token = _exportCts.Token;
+        CancelExportButton.IsEnabled = true;
+
         var success = 0;
         var errors = new List<string>();
         var completed = 0;
+        var canceled = false;
         var currentTaskNames = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
 
         using var semaphore = new SemaphoreSlim(concurrency);
         var exportJobs = tasks.Select(async (task, slot) =>
         {
-            await semaphore.WaitAsync();
+            await semaphore.WaitAsync(token);
             try
             {
                 currentTaskNames[slot] = task.Scheme.Name;
                 UpdateConcurrentProgress();
 
                 await _exportService.ExportAsync(task.Input, task.OutputPath, config,
-                    _ => UpdateConcurrentProgress());
+                    _ => UpdateConcurrentProgress(), token);
                 Interlocked.Increment(ref success);
+            }
+            catch (OperationCanceledException)
+            {
+                // 用户主动取消 —— 不计入失败，单独走「已取消」分支。
+                canceled = true;
             }
             catch (Exception ex)
             {
@@ -392,12 +438,28 @@ public partial class ExportView : UserControl, IProjectView
                 semaphore.Release();
             }
         });
-        await Task.WhenAll(exportJobs);
+
+        // semaphore.WaitAsync(token) 在取消后会抛 OperationCanceledException，
+        // 用 Task.WhenAll 收集时整体也会抛，统一在这里兜成「已取消」状态。
+        try
+        {
+            await Task.WhenAll(exportJobs);
+        }
+        catch (OperationCanceledException)
+        {
+            canceled = true;
+        }
 
         ProgressSection.Visibility = Visibility.Collapsed;
+        CancelExportButton.IsEnabled = false;
         UpdateExportButtonText(); // ExportAllButton 状态按当前选择数计算
 
-        if (errors.Count == 0)
+        if (canceled)
+        {
+            Components.ToastService.Show(
+                $"已取消导出（已完成 {success}/{tasks.Count} 个）", Components.ToastStyle.Warning);
+        }
+        else if (errors.Count == 0)
         {
             CompletePanel.Visibility = Visibility.Visible;
             CompleteText.Text = $"共导出 {success} 个视频" +
@@ -434,6 +496,19 @@ public partial class ExportView : UserControl, IProjectView
                     ? string.Empty : "进行中：" + inProgress;
             });
         }
+    }
+
+    /// <summary>QW-11：取消批量导出。按钮点击或 ESC 触发，整批正在跑的 ffmpeg 收到 token 后停。</summary>
+    private void OnCancelExportClick(object sender, RoutedEventArgs e)
+    {
+        if (_exportCts is null || _exportCts.IsCancellationRequested)
+        {
+            return;
+        }
+        CancelExportButton.IsEnabled = false;
+        ProgressStatusText.Text = "正在取消…";
+        Serilog.Log.Information("[ExportCancel] 用户取消批量导出");
+        _exportCts.Cancel();
     }
 
     private void OnOpenOutputFolder(object sender, RoutedEventArgs e)

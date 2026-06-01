@@ -16,9 +16,12 @@
     <!-- v0.6.1：回退分镜 hover 播放到 v0.3.0 MediaElement 实现（消灭卡死，接受闪帧）。
          同步清掉 v0.6.0 引入的 LibVLCSharp NuGet 包 + VlcBootstrap.cs（孤儿代码），
          安装包体积从 ~200MB 降到 ~50MB。 -->
-    <Version>0.6.1</Version>
-    <AssemblyVersion>0.6.1.0</AssemblyVersion>
-    <FileVersion>0.6.1.0</FileVersion>
+    <!-- v0.7.0：Ctrl+Z 撤销栈（分镜/方案/策略删除）+ 启动闪屏 + 侧边栏微信入口 +
+         AsSplitQuery 性能修复 + 全局按钮样式/nav 淡入/卡片 hover + 一批边界 bug 修复 +
+         新建 MixCut.Tests 单元/集成测试工程。 -->
+    <Version>0.7.0</Version>
+    <AssemblyVersion>0.7.0.0</AssemblyVersion>
+    <FileVersion>0.7.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -48,6 +51,9 @@
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <!-- DPAPI 加密 API Key（QW-13）：封装 Windows crypt32.dll（系统自带，Win10/11 全有），
+         self-contained 发布带托管 dll，无新增 native 依赖，双平台兼容无忧。 -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

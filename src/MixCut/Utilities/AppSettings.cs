@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using MixCut.Services.AI;
 
@@ -7,7 +9,8 @@ namespace MixCut.Utilities;
 /// <summary>
 /// 应用设置存储。对应 macOS 版 KeychainHelper（用 UserDefaults 存 API Key）。
 /// Windows 版以 JSON 文件持久化到 <c>%APPDATA%\MixCut\settings.json</c>。
-/// 与 macOS 版一致，API Key 以明文存储（开发期简化，避免凭据弹窗）。
+/// QW-13：API Key 用 Windows DPAPI（当前用户作用域）加密存储，不再明文落盘 ——
+/// 防止本地恶意程序（普通用户权限）直接读 settings.json 盗刷 key。老明文数据启动时自动迁移加密。
 /// 注册为单例服务。
 /// </summary>
 public sealed class AppSettings
@@ -15,11 +18,15 @@ public sealed class AppSettings
     private static readonly string FilePath = Path.Combine(AppPaths.Root, "settings.json");
     private static readonly object Gate = new();
 
+    /// <summary>DPAPI 密文前缀标记，用于区分「已加密」与「老明文」值（QW-13 迁移用）。</summary>
+    private const string EncPrefix = "dpapi:";
+
     private Dictionary<string, string> _values = new();
 
     public AppSettings()
     {
         Load();
+        MigratePlaintextApiKeys();
     }
 
     private void Load()
@@ -32,9 +39,100 @@ public sealed class AppSettings
                 _values = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            // QW-15/P0-26：settings.json 损坏（写一半断电 / 磁盘坏块 / 被杀软改）时，绝不能空 catch 吞掉 ——
+            // 否则下一次 Save 会用空 json 覆盖损坏文件，用户所有配置（含 API Key / 模型选择 / 全部偏好）
+            // 永久丢失。先把损坏文件备份到 settings.json.broken-{时间戳}，再用默认配置启动，给用户留挽回余地。
             _values = new();
+            TryBackupBrokenSettings(ex);
+        }
+    }
+
+    /// <summary>把损坏的 settings.json 备份到 .broken-{时间戳}，避免被默认配置覆盖后无法挽回（QW-15/P0-26）。</summary>
+    private static void TryBackupBrokenSettings(Exception cause)
+    {
+        try
+        {
+            if (!File.Exists(FilePath))
+            {
+                return;
+            }
+            var backup = $"{FilePath}.broken-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Copy(FilePath, backup, overwrite: true);
+            Serilog.Log.Error(cause, "[AppSettings] settings.json 损坏，已备份到 {Backup}，本次用默认配置启动", backup);
+        }
+        catch (Exception backupEx)
+        {
+            Serilog.Log.Warning(backupEx, "[AppSettings] 备份损坏的 settings.json 失败");
+        }
+    }
+
+    // ---- DPAPI 加密（QW-13）----
+
+    /// <summary>用 Windows DPAPI（当前用户作用域）加密敏感值，带 dpapi: 前缀。加密失败兜底存明文，避免 key 丢。</summary>
+    private static string Protect(string plain)
+    {
+        if (string.IsNullOrEmpty(plain))
+        {
+            return plain;
+        }
+        try
+        {
+            var enc = ProtectedData.Protect(Encoding.UTF8.GetBytes(plain), null, DataProtectionScope.CurrentUser);
+            return EncPrefix + Convert.ToBase64String(enc);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[AppSettings] API Key 加密失败，回退明文存储");
+            return plain;
+        }
+    }
+
+    /// <summary>解密 DPAPI 值；无前缀的视为老明文（迁移兼容）原样返回；解密失败（换 Windows 用户/机器）返回空。</summary>
+    private static string Unprotect(string stored)
+    {
+        if (!stored.StartsWith(EncPrefix, StringComparison.Ordinal))
+        {
+            return stored; // 老明文 —— 迁移前数据，原样返回（GetApiKey 仍能用）
+        }
+        try
+        {
+            var enc = Convert.FromBase64String(stored[EncPrefix.Length..]);
+            var bytes = ProtectedData.Unprotect(enc, null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(bytes);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[AppSettings] API Key 解密失败（可能换了 Windows 用户/机器），需重新填写");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>启动期把历史明文 API Key 一次性重新用 DPAPI 加密（QW-13 迁移），消除磁盘上的明文 key。</summary>
+    private void MigratePlaintextApiKeys()
+    {
+        try
+        {
+            var plaintext = _values
+                .Where(kv => kv.Key.StartsWith("api_key_", StringComparison.Ordinal)
+                          && !string.IsNullOrEmpty(kv.Value)
+                          && !kv.Value.StartsWith(EncPrefix, StringComparison.Ordinal))
+                .ToList();
+            if (plaintext.Count == 0)
+            {
+                return;
+            }
+            foreach (var kv in plaintext)
+            {
+                _values[kv.Key] = Protect(kv.Value);
+            }
+            Save();
+            Serilog.Log.Information("[AppSettings] 已加密迁移 {Count} 个明文 API Key（DPAPI）", plaintext.Count);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[AppSettings] 明文 API Key 加密迁移失败，忽略");
         }
     }
 
@@ -43,7 +141,12 @@ public sealed class AppSettings
         lock (Gate)
         {
             var json = JsonSerializer.Serialize(_values, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(FilePath, json);
+            // QW-18：原子写。原来直接 WriteAllText(FilePath) 若中途断电 / 杀进程会把 settings.json
+            // 截断成无效 JSON，下次启动反序列化失败 → 全部设置丢。改「先写 .tmp 再原子 rename」：
+            // 崩在写 .tmp 阶段时，原 settings.json 完好无损。
+            var tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, FilePath, overwrite: true);
         }
     }
 
@@ -63,11 +166,21 @@ public sealed class AppSettings
         Save();
     }
 
-    // ---- API Key ----
+    // ---- API Key（QW-13：DPAPI 加密存储）----
 
-    public void SaveApiKey(string key, AIProviderType provider) => Set("api_key_" + provider.Key(), key);
+    public void SaveApiKey(string key, AIProviderType provider) =>
+        Set("api_key_" + provider.Key(), Protect(key));
 
-    public string? GetApiKey(AIProviderType provider) => Get("api_key_" + provider.Key());
+    public string? GetApiKey(AIProviderType provider)
+    {
+        var stored = Get("api_key_" + provider.Key());
+        if (stored is null)
+        {
+            return null;
+        }
+        var plain = Unprotect(stored);
+        return string.IsNullOrEmpty(plain) ? null : plain;
+    }
 
     public void RemoveApiKey(AIProviderType provider) => Set("api_key_" + provider.Key(), null);
 
@@ -147,6 +260,13 @@ public sealed class AppSettings
     {
         get => Get("last_batch_export_dir") ?? string.Empty;
         set => Set("last_batch_export_dir", string.IsNullOrEmpty(value) ? null : value);
+    }
+
+    /// <summary>方案筛选导出（ExportView）上次选择的输出目录（QW-3：跨会话记忆，与批量导出对话框各自独立）。</summary>
+    public string LastExportDirForSchemes
+    {
+        get => Get("last_export_dir_schemes") ?? string.Empty;
+        set => Set("last_export_dir_schemes", string.IsNullOrEmpty(value) ? null : value);
     }
 
     /// <summary>上次选中的项目 ID（启动时自动恢复）。对齐 macOS @AppStorage("lastSelectedProjectId")。</summary>

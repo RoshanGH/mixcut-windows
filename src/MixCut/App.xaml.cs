@@ -84,6 +84,19 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // QW-10：冷启动期 host 启动 + DB 迁移 + 硬件探测有数秒空白，先弹启动闪屏给即时反馈，
+        // 避免「双击了没反应」的错觉。try/catch 兜底 —— 闪屏永远不能阻断或拖垮真正的启动。
+        SplashWindow? splash = null;
+        try
+        {
+            splash = new SplashWindow();
+            splash.Show();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Splash] 启动闪屏创建失败，忽略不影响启动");
+        }
+
         await _host.StartAsync();
         Log.Information("MixCut 启动，数据目录: {Root}", AppPaths.Root);
 
@@ -137,6 +150,9 @@ public partial class App : Application
             // 清理上次未正常完成的中间态视频（崩溃/强退导致状态卡在分析中）。
             // 对齐 macOS 版 MixCutApp.resetStaleAnalyzingStatus。
             ResetStaleAnalyzingStatus(db);
+            // P1-73：同样恢复卡在「生成方案中」(Generating) 的项目 —— AI 生成方案过程中
+            // 应用崩溃 / 断电 / 强退时，项目状态会永久卡 Generating，用户无法再次生成（无解死锁）。
+            ResetStaleGeneratingProjects(db);
 
             // v0.3.0 对齐迁移：老项目补建「自定义组合」策略
             var settingsForMigration = _host.Services.GetRequiredService<AppSettings>();
@@ -154,6 +170,10 @@ public partial class App : Application
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         window.Show();
+        // QW-10：主窗口已就绪 → 关闭启动闪屏。先 Show 主窗口再关闭闪屏，避免中间出现空屏闪烁。
+        try { splash?.Close(); }
+        catch (Exception ex) { Log.Warning(ex, "[Splash] 关闭闪屏失败，忽略"); }
+
         // 把全局 Toast Overlay 附到主窗口（之后任何代码可以 ToastCenter.Shared.Show(...)）。
         Views.Shared.ToastCenter.Shared.AttachTo(window);
 
@@ -413,6 +433,35 @@ public partial class App : Application
         {
             // 状态清理失败不能阻止应用启动 —— 大不了让用户在 ImportView 看到「分析中」假象。
             Log.Warning(ex, "重置卡死视频状态失败，忽略");
+        }
+    }
+
+    /// <summary>
+    /// 重置上次卡在「生成方案中」(Generating) 的项目状态 → Ready（P1-73）。
+    /// 场景：AI 生成方案过程中应用崩溃 / 断电 / 强退，项目永久卡 Generating，用户无解。
+    /// 配合 SchemeViewModel 失败/取消时的状态回滚，构成「生成中断」双端兜底。
+    /// </summary>
+    private static void ResetStaleGeneratingProjects(Data.MixCutDbContext db)
+    {
+        try
+        {
+            var stuck = db.Projects
+                .Where(p => p.Status == Models.ProjectStatus.Generating)
+                .ToList();
+            if (stuck.Count == 0)
+            {
+                return;
+            }
+            foreach (var p in stuck)
+            {
+                p.Status = Models.ProjectStatus.Ready;
+            }
+            db.SaveChanges();
+            Log.Information("已重置 {Count} 个卡在「生成方案中」的项目状态 → Ready", stuck.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "重置卡死项目状态失败，忽略");
         }
     }
 

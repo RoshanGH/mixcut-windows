@@ -59,9 +59,10 @@
             </Border>
 
             <!-- CTA -->
-            <Button x:Name="CreateButton" Padding="36,12" FontSize="14" FontWeight="SemiBold"
-                    Background="#1D6BE5" Foreground="White" BorderThickness="0"
-                    HorizontalAlignment="Center" Cursor="Hand" Click="OnCreateClick">
+            <!-- P0-3：全局 PrimaryButtonStyle（蓝底白字 + hover/pressed/圆角），保留大号 Padding/FontSize -->
+            <Button x:Name="CreateButton" Padding="36,12" FontSize="14"
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    HorizontalAlignment="Center" Click="OnCreateClick">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="+" FontSize="16" FontWeight="Bold" Margin="0,0,6,0" />
                     <TextBlock Text="创建新项目" />

@@ -24,11 +24,12 @@
         </Grid>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
             <Button Content="取消" Padding="18,7" Margin="0,0,10,0"
+                    Style="{StaticResource SecondaryButtonStyle}"
                     IsCancel="True" Click="OnCancel" />
             <!-- 名称为空时实时 disabled，对齐 Mac 行为；不再用 MessageBox 报错 -->
             <Button x:Name="CreateButton" Content="+  创建" Padding="18,7"
-                    IsDefault="True" Background="#1D6BE5" Foreground="White"
-                    BorderThickness="0" Click="OnCreate" IsEnabled="False" />
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    IsDefault="True" Click="OnCreate" IsEnabled="False" />
         </StackPanel>
     </StackPanel>
 </Window>

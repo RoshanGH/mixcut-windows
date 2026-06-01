@@ -311,7 +311,7 @@ public partial class SettingsWindow : Window
         AboutPanel.Children.Clear();
         AddOnboardingResetRow(AboutPanel);
         AddInfoRow(AboutPanel, "开发者", "MengGang");
-        AddInfoRow(AboutPanel, "联系方式", "13462890087");
+        AddInfoRow(AboutPanel, "微信", "13462890087");
         AddLinkRow(AboutPanel, "GitHub", "RoshanGH/mixed_cut", "https://github.com/RoshanGH/mixed_cut");
     }
 

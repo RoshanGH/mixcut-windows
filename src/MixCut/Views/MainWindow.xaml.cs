@@ -77,6 +77,8 @@ public partial class MainWindow : Window
         _vm.ProjectVM.SelectedProject = ProjectList.SelectedItem as Project;
         // 持久化最近选中的项目（应用重启时恢复）
         _settings.LastSelectedProjectId = _vm.ProjectVM.SelectedProject?.Id;
+        // P0-10：撤销栈是项目级的（捕获了某项目的 DB 数据），切项目必须清空，防在 B 撤销 A 的删除写脏数据。
+        Infrastructure.UndoStack.UndoManager.Shared.Clear();
         UpdateNavEnabled();
         UpdateContent();
     }
@@ -105,7 +107,7 @@ public partial class MainWindow : Window
         if (project is null)
         {
             _welcome ??= new WelcomeView(_vm.ProjectVM, _settings, _asrService, RefreshAfterProjectChange);
-            ContentArea.Content = _welcome;
+            SetContentWithFade(_welcome);
             return;
         }
 
@@ -120,7 +122,29 @@ public partial class MainWindow : Window
                 _viewLastLoadedProjectId[_vm.SelectedNavItem] = project.Id;
             }
         }
+        SetContentWithFade(view);
+    }
+
+    /// <summary>
+    /// P0-5：切换内容区时做一次 160ms 淡入，替代生硬的瞬间切换，对齐剪映 / FCP 级丝滑。
+    /// 仅在目标 view 与当前不同才动画，避免同视图重复刷新时无谓闪烁。
+    /// </summary>
+    private void SetContentWithFade(FrameworkElement view)
+    {
+        if (ReferenceEquals(ContentArea.Content, view))
+        {
+            return;
+        }
         ContentArea.Content = view;
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(0.0, 1.0,
+            new Duration(TimeSpan.FromMilliseconds(160)))
+        {
+            EasingFunction = new System.Windows.Media.Animation.CubicEase
+            {
+                EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut,
+            },
+        };
+        ContentArea.BeginAnimation(UIElement.OpacityProperty, fade);
     }
 
     private FrameworkElement GetView(NavigationItem item)
@@ -139,7 +163,7 @@ public partial class MainWindow : Window
                 ? new SegmentLibraryViewV2(_vm.SegmentVM, _batchExportService, _settings)
                 : (FrameworkElement)new SegmentLibraryView(_vm.SegmentVM, _batchExportService, _settings),
             NavigationItem.Schemes => new SchemesView(_vm.SchemeVM, _vm.SegmentVM),
-            NavigationItem.Export => new ExportView(_vm.SchemeVM, _exportService),
+            NavigationItem.Export => new ExportView(_vm.SchemeVM, _exportService, _settings),
             _ => new ProjectOverviewView(_vm, NavigateTo, RefreshAfterProjectChange),
         };
         _views[item] = view;
@@ -234,6 +258,34 @@ public partial class MainWindow : Window
         new SettingsWindow(_settings, _asrService) { Owner = this }.ShowDialog();
     }
 
+    /// <summary>侧边栏「微信」入口：弹出微信号卡片（issue #5）。</summary>
+    private void OnWeChatClick(object sender, RoutedEventArgs e)
+    {
+        WeChatPopup.IsOpen = true;
+    }
+
+    /// <summary>复制微信号到剪贴板，文案临时变「已复制 ✓」（关卡片时由 OnWeChatPopupClosed 复位）。</summary>
+    private void OnCopyWeChatClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(WeChatIdBox.Text);
+            CopyWeChatButton.Content = "已复制 ✓";
+        }
+        catch (Exception ex)
+        {
+            // 剪贴板偶发被其他进程占用会抛 COMException —— 不让异常逃逸，给用户兜底提示。
+            Serilog.Log.Warning(ex, "[WeChat] 复制微信号到剪贴板失败");
+            CopyWeChatButton.Content = "复制失败，请手动选择";
+        }
+    }
+
+    /// <summary>卡片关闭时重置「已复制」状态，下次打开恢复初始文案。</summary>
+    private void OnWeChatPopupClosed(object sender, EventArgs e)
+    {
+        CopyWeChatButton.Content = "复制微信号";
+    }
+
     private void OnNewProjectCommand(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
         => OnNewProjectClick(sender, e);
 
@@ -306,6 +358,25 @@ public partial class MainWindow : Window
     {
         if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Control)
         {
+            // P0-10：Ctrl+Z 全局撤销（目前覆盖分镜批量删除，后续扩展方案/项目删除）。
+            if (e.Key == System.Windows.Input.Key.Z)
+            {
+                try
+                {
+                    var desc = Infrastructure.UndoStack.UndoManager.Shared.Undo();
+                    if (desc is null)
+                    {
+                        Views.Shared.ToastCenter.Shared.Show("没有可撤销的操作", Views.Shared.ToastStyle.Info);
+                    }
+                }
+                catch
+                {
+                    Views.Shared.ToastCenter.Shared.Show("撤销失败", Views.Shared.ToastStyle.Error);
+                }
+                e.Handled = true;
+                return;
+            }
+
             var idx = e.Key switch
             {
                 System.Windows.Input.Key.D1 => 0,

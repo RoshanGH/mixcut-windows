@@ -277,9 +277,11 @@ public sealed class OpenAICompatibleClient : IAiProvider
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogError("HTTP {Code}: {Body}", (int)response.StatusCode, Truncate(data, 500));
+                    // QW-14：某些 API 网关的错误响应体会回显 Authorization header（含 Bearer token）。
+                    // 写日志 / 抛给上层前先脱敏，避免密钥泄漏到日志文件或冒泡到用户可见的错误信息。
+                    _logger.LogError("HTTP {Code}: {Body}", (int)response.StatusCode, Redact(Truncate(data, 500)));
                     throw AIProviderException.RequestFailed(
-                        $"HTTP {(int)response.StatusCode}: {Truncate(data, 200)}");
+                        $"HTTP {(int)response.StatusCode}: {Redact(Truncate(data, 200))}");
                 }
 
                 return isClaude ? ParseClaudeResponse(data) : ParseOpenAIResponse(data);
@@ -530,4 +532,16 @@ public sealed class OpenAICompatibleClient : IAiProvider
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
+
+    /// <summary>脱敏日志 / 错误信息中可能回显的密钥（QW-14）：Bearer token、sk- 开头的 key。</summary>
+    private static string Redact(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            return s;
+        }
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"Bearer\s+[A-Za-z0-9\-\._]+", "Bearer ***");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"sk-[A-Za-z0-9\-]{6,}", "sk-***");
+        return s;
+    }
 }
