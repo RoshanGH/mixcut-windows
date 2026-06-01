@@ -57,6 +57,12 @@ public sealed class FFmpegRunner
 
         if (exitCode != 0)
         {
+            // 完整命令 + 完整 stderr 写日志（异常只带 200 字符尾巴，真因常在上面几行 —— 比如
+            // nvenc 的「driver does not support」「No capable devices」等关键行。诊断日志靠这个）。
+            Serilog.Log.Error("[ffmpeg-fail] exit={ExitCode}\n命令: {Cmd}\nstderr:\n{Stderr}",
+                exitCode,
+                string.Join(' ', arguments.Select(a => a.Contains(' ') ? $"\"{a}\"" : a)),
+                stderr);
             throw FFmpegException.ExecutionFailed(exitCode, stderr);
         }
         return stdout;

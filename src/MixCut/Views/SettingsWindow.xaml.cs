@@ -310,6 +310,7 @@ public partial class SettingsWindow : Window
         // 关于。
         AboutPanel.Children.Clear();
         AddOnboardingResetRow(AboutPanel);
+        AddDiagnosticExportRow(AboutPanel);
         AddInfoRow(AboutPanel, "开发者", "MengGang");
         AddInfoRow(AboutPanel, "微信", "13462890087");
         AddLinkRow(AboutPanel, "GitHub", "RoshanGH/mixed_cut", "https://github.com/RoshanGH/mixed_cut");
@@ -344,6 +345,70 @@ public partial class SettingsWindow : Window
             _settings.HasCompletedOnboarding = false;
             MessageBox.Show("已重置使用引导。下次启动 MixCut 时会再次显示。",
                 "MixCut", MessageBoxButton.OK, MessageBoxImage.Information);
+        };
+        Grid.SetColumn(btn, 1);
+        row.Children.Add(btn);
+        host.Children.Add(row);
+    }
+
+    /// <summary>
+    /// 「导出诊断日志」按钮：一键把最近日志 + 系统/显卡/驱动/nvenc 信息打包成桌面 zip，
+    /// 提示用户通过侧边栏「微信」发给开发者。导出失败这类 GPU 路径问题靠这个回收现场。
+    /// </summary>
+    private void AddDiagnosticExportRow(Panel host)
+    {
+        var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var label = new TextBlock
+        {
+            Text = "遇到问题", FontSize = 12, Foreground = Brushes.Gray,
+            Margin = new Thickness(0, 5, 8, 0),
+        };
+        Grid.SetColumn(label, 0);
+        row.Children.Add(label);
+
+        var btn = new Button
+        {
+            Content = "📋 导出诊断日志",
+            Padding = new Thickness(10, 3, 10, 3), HorizontalAlignment = HorizontalAlignment.Left,
+            Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC)),
+        };
+        btn.Click += async (_, _) =>
+        {
+            // async void 事件处理器：全程 try/catch，异常不许逃逸。
+            try
+            {
+                btn.IsEnabled = false;
+                btn.Content = "正在导出…";
+                var zipPath = await Infrastructure.DiagnosticExport.ExportAsync();
+                btn.Content = "📋 导出诊断日志";
+                btn.IsEnabled = true;
+
+                var resp = MessageBox.Show(
+                    "诊断文件已保存到桌面：\n" + System.IO.Path.GetFileName(zipPath) + "\n\n" +
+                    "请通过侧边栏「微信」联系开发者，并把这个文件发过去，便于排查问题。\n\n" +
+                    "点「确定」在资源管理器中定位该文件。",
+                    "MixCut · 诊断日志已导出", MessageBoxButton.OKCancel, MessageBoxImage.Information);
+                if (resp == MessageBoxResult.OK)
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "explorer.exe", Arguments = $"/select,\"{zipPath}\"", UseShellExecute = true,
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                btn.Content = "📋 导出诊断日志";
+                btn.IsEnabled = true;
+                Serilog.Log.Warning(ex, "[DiagnosticExport] 导出诊断日志失败");
+                MessageBox.Show(
+                    "导出诊断日志失败：" + ex.Message + "\n\n" +
+                    "可手动把以下文件夹里最新的 .log 发给开发者：\n" + Utilities.AppPaths.LogDirectory,
+                    "MixCut", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         };
         Grid.SetColumn(btn, 1);
         row.Children.Add(btn);
