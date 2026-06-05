@@ -19,9 +19,9 @@
     <!-- v0.7.0：Ctrl+Z 撤销栈（分镜/方案/策略删除）+ 启动闪屏 + 侧边栏微信入口 +
          AsSplitQuery 性能修复 + 全局按钮样式/nav 淡入/卡片 hover + 一批边界 bug 修复 +
          新建 MixCut.Tests 单元/集成测试工程。 -->
-    <Version>0.7.2</Version>
-    <AssemblyVersion>0.7.2.0</AssemblyVersion>
-    <FileVersion>0.7.2.0</FileVersion>
+    <Version>0.7.3</Version>
+    <AssemblyVersion>0.7.3.0</AssemblyVersion>
+    <FileVersion>0.7.3.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -47,6 +47,9 @@
     <!-- 虚拟化 WrapPanel：分镜库 100+ 卡片场景下视口外不实例化，消除首次进入卡顿。
          参考 https://github.com/sbaeumlisberger/VirtualizingWrapPanel -->
     <PackageReference Include="VirtualizingWrapPanel" Version="2.0.11" />
+    <!-- hover 预览音频输出：纯托管，把 ffmpeg 解出的 PCM 管道喂给声卡（§兼容性总纲：预览自带解码，
+         与视频帧泵同一时刻起跑，各自跟真实时间，短片段音画漂移不可感）。 -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
