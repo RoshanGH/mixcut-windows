@@ -71,7 +71,7 @@ MixCut Windows 版 —— macOS 原生应用 [MixCut](https://github.com/RoshanG
 | Windows 10 1809 之前 | n/a | n/a | ❌ 不支持（.NET 8 硬性下限） |
 | Windows 7 / 8 / 8.1 | n/a | n/a | ❌ 不支持 |
 | Windows ARM64 | n/a | n/a | ❌ 暂不支持 |
-| Windows 10/11 N 版（不含 Media Pack） | n/a | n/a | ⚠️ 自带 LibVLC 后已不依赖 Windows Media Foundation，理论上能跑，发版前需在 N 版上跑一遍 e2e |
+| Windows 10/11 N 版（不含 Media Pack） | n/a | n/a | ⚠️ 导出/缩略图走自带 ffmpeg 不受影响；但当前**预览仍走 WPF MediaElement（依赖系统编解码器）**，N 版 / 缺 HEVC 扩展机器会预览失败 —— 见 §兼容性总纲，预览统一到 ffmpeg 后才算真正达标 |
 
 > .NET 8 官方最低支持 Win 10 1809。低于此版本系统市占率 < 1%，不在支持范围。
 
@@ -85,20 +85,22 @@ MixCut Windows 版 —— macOS 原生应用 [MixCut](https://github.com/RoshanG
 | VC++ Redistributable (2015-2022) | ✅ publish/bin/ 已含 6 个 VC Runtime DLL | ❌ 不要求用户装 VC++ Redist |
 | OpenMP runtime (vcomp140) | ✅ publish/bin/ 已含 | ❌ 不要求用户装 Office |
 | FFmpeg / ffprobe / whisper-cli | ✅ publish/bin/ 已含 | ❌ 不要求用户装 FFmpeg |
-| LibVLC + 365 个解码插件（v0.6.0+） | ✅ publish/libvlc/win-x64/ 已含 | ❌ 不要求用户装 VLC Player |
+| 视频解码（HEVC/VP9/AV1 等） | ✅ 导出/缩略图走自带 ffmpeg；⚠️ 预览待统一到 ffmpeg（见 §兼容性总纲） | ❌ 不要求用户装系统编解码器 / HEVC 扩展 / VLC |
 | Whisper 语音模型（按需下载） | ⚠️ 首次用 ASR 时下载 | ✅ 应用内有下载进度 UI + 国内镜像源 |
 
-发版前自检 grep 关键字：`[VcRuntimeDiag] all 6 VC Runtime DLLs present`、`[VlcDiag] libvlc=... ok`、`[EnvDiag] pass=True`。
+> 注：v0.6.1 已移除 LibVLC（NuGet 包 + VlcBootstrap.cs + 365 plugins，见 commit `af0ddd7`）。当前不再随包分发 LibVLC，预览暂回退到 MediaElement —— 这是 §兼容性总纲待修项。
+
+发版前自检 grep 关键字：`[VcRuntimeDiag] all 6 VC Runtime DLLs present`、`[EnvDiag] pass=True`。
 
 ### 发版前 Win 10/11 双平台兼容性 checklist
 
 **每次改动引入新 native 依赖（LibVLC、ffmpeg 升级、whisper 升级等）必须跑完**：
 
 - [ ] **静态分析**：对每个**新引入的 native dll** 跑 PE import 表扫描（`Get-PeImports`），列所有依赖 dll → 对比 publish/bin/ 和 publish/libvlc/ 是否完备 → 缺啥补啥（参考 v0.4.1 vcomp140 沉淀方法）
-- [ ] **构建机自验**：远端 publish + 启动 + grep 启动期诊断日志 `[VcRuntimeDiag]` `[VlcDiag]` `[EnvDiag]` 全绿
+- [ ] **构建机自验**：远端 publish + 启动 + grep 启动期诊断日志 `[VcRuntimeDiag]` `[EnvDiag]` 全绿
 - [ ] **干净 Win 10 e2e**（**有干净机时必跑**）：装安装包 → 启动 → 完整跑导入 → ASR → 切分 → 方案生成 → 导出 → 用系统播放器播一遍
 - [ ] **干净 Win 11 e2e**（**有干净机时必跑**）：同上
-- [ ] **N 版 Win 10/11 e2e**（**有 N 版机时必跑**）：N 版不含 Windows Media Foundation，确认 LibVLC 走自己的解码栈不撞 mfplat.dll
+- [ ] **N 版 Win 10/11 e2e**（**有 N 版机时必跑**）：N 版不含 Windows Media Foundation，确认自带 ffmpeg 解码栈不撞 mfplat.dll（**预览统一到 ffmpeg 后此项才算真正达标**；当前预览仍走 MediaElement，N 版必失败）
 - [ ] **无干净机时**：dumpbin 静态分析 + 构建机用「新用户账号 + 不继承 VC++ Redist」模拟干净环境跑
 
 ### 已知容易撞双平台兼容性的雷区（动相关代码时必查）
@@ -108,11 +110,10 @@ MixCut Windows 版 —— macOS 原生应用 [MixCut](https://github.com/RoshanG
 | **VC Runtime 缺失** | 干净机启动崩，`ExitCode=-1073741515` (`STATUS_DLL_NOT_FOUND`) | v0.3.0 沉淀：必带 6 个 VC Runtime DLL |
 | **vcomp140 缺失** | ggml-cpu / 部分 OpenMP 加速代码崩 | v0.4.0 沉淀：必带 vcomp140 + concrt140 |
 | **ffmpeg codec-private 选项** | N 卡 / I 卡 / A 卡 不同 GPU 路径行为不一致 | v0.4.0 沉淀：构建机只能测一种 GPU，其它 GPU 路径需用户实测 |
-| **WPF MediaElement seek 闪帧** | hover 播放分镜先闪视频第 0 秒 | v0.6.0 沉淀：换 LibVLCSharp，TimeChanged 精确感知 seek 完成 |
-| **LibVLC native dll 路径** | hover 即崩 `DllNotFoundException` libvlc | v0.6.0：启动期 `Core.Initialize(libvlcDir)` explicit 路径 + 启动检查弹窗 |
-| **LibVLC 365 plugins 缺失** | VLC 报「无解码器」/ 部分视频格式无法播 | v0.6.0：Inno Setup 必须把 publish/libvlc/ 整目录打进安装包 |
+| **预览依赖系统编解码器** ⚠️ | HEVC / iPhone「高效」格式 hover 预览报 `0xC00D109B 该格式可能需要系统媒体编解码支持` | **当前 InlineVideoPlayer 仍用 WPF MediaElement，违反 §兼容性总纲**；待统一到自带 ffmpeg 解码 —— 全工程唯一掉队的一环 |
+| **WPF MediaElement seek 闪帧** | hover 播放分镜先闪视频第 0 秒 | v0.3.0 行为；v0.6.0 曾用 LibVLC 根治但引入卡死，v0.6.1 退回 MediaElement 接受闪帧；最终随「预览统一到 ffmpeg」一并解决 |
 | **Windows SmartScreen 拦截** | 首次启动「Windows 已保护你的电脑」拦 | 长期：买 EV 代码签名证书；短期：用户点「仍要运行」 |
-| **antivirus 误报** | VLC 被识为 P2P 工具 / whisper-cli 被识为可疑 | 短期容忍；发版 notes 提示用户加白名单 |
+| **antivirus 误报** | whisper-cli / ffmpeg 被识为可疑 | 短期容忍；发版 notes 提示用户加白名单 |
 | **Win 10 1809 之前** | .NET 8 安装失败 | 不在支持范围，安装包不主动检查（用户极少） |
 
 ### 反模式（绝对禁止）
@@ -122,6 +123,45 @@ MixCut Windows 版 —— macOS 原生应用 [MixCut](https://github.com/RoshanG
 - ❌ 发版前没跑过干净 Win 10 e2e（**有干净机时**）
 - ❌ Release notes 写「请先装 VC++ Redist」/「请先装 .NET Runtime」—— 这违反「装上即跑」原则
 - ❌ 提示用户「请把 X 加入防火墙白名单」/「请关闭杀软」—— 短期容忍提示但长期必须自己签证书
+
+---
+
+## 🧬 兼容性总纲：核心能力「自带 · 自控 · 与系统解耦」（一切技术决策的出发点 ⚠️⚠️⚠️）
+
+> 「永远都会有兼容性的问题，你需要自己去思考……既然是 Windows 环境下要支持 Win10/11（不含 Win7）的商业化 ToC 软件，那么它应该是个什么样的标准……我们所做的一切的一切都是以这个为出发点的。」—— 项目用户原话（2026-06-05）
+
+本节回答一个比任何单个 bug 更根本的问题：**作为一款只跑在 Win10/11（不含 Win7）的商业化 ToC 桌面软件，遇到「兼容性」类问题（能不能播 / 能不能导 / 能不能装 / 能不能跑）时，判断标准到底是什么。** §「装上即跑」「双平台兼容」都只是本总纲的推论。遇到任何新的兼容性问题，先回这一节量，而不是临时拍方案。
+
+### 一条法则
+
+> **凡是核心功能依赖的能力（解码 / 编码 / 运行库 / 字体 / GPU 路径 / 任何 native 能力），一律由我们自带、自己控制版本、与导出/处理同源；绝不把「能不能用」赌在「用户机器恰好装了某个系统组件 / 商店扩展 / 编解码器 / 播放器」上。**
+
+四个推论（遇到兼容问题按此顺序自查）：
+
+1. **不信任目标机器**：基线是 Win10/11 的「默认裸装状态」——没装过 VS、没装过 VC++ Redist、没装过 HEVC 扩展、没装过任何播放器、没有独显。凡是这个状态下不保证存在的东西，一律不许依赖。
+2. **自带引擎、与系统解耦**：媒体能力（解码 / 编码）一律走我们打包的 **FFmpeg**，**绝不调用 Windows Media Foundation / 系统编解码器 / 微软商店扩展**。操作系统只负责给窗口和画像素，不负责「懂格式」。
+3. **同源一致（所见即所得）**：预览、缩略图、导出**共用同一套解码 / 编码栈**。用户预览看到什么，导出就是什么——这是商业级软件的基本盘，也根除「预览能播但导出失败」「导出成功但预览打不开」这类自相矛盾。
+4. **降级而非报错**：万一某条路真走不通，必须**优雅降级 + 人话提示 + 可恢复入口**，绝不把 `0xC00D109B` / stack trace / exit code 这种系统原文丢用户脸上（呼应 §最高原则红线）。
+
+### worked example：拿这把尺量两个真实问题（2026-06-05 用户反馈）
+
+| 问题 | 错误现象 | 用总纲一量 | 正确处理 |
+|---|---|---|---|
+| **预览播放** | `0xC00D109B 该格式可能需要系统媒体编解码支持`（HEVC / iPhone「高效」格式） | ❌ 违反推论 2：hover 预览还在用 WPF MediaElement → Windows Media Foundation，赌用户装了 HEVC 扩展。这是**全工程唯一**还依赖系统编解码器的一环 | 预览改走自带 FFmpeg 解码（和导出同源），与剪映 / Premiere / DaVinci 同架构 |
+| **导出失败** | `Unrecognized option 'allow_sw'` exit -1414549496 | ✅ 自带 ffmpeg 方向没错，是**用户在跑 v0.4.1 之前的旧版**；当前代码早删该选项（`FFmpegRunner.cs` 只剩注释） | 引导用户更新到最新版即可；反过来印证「自带引擎 + 同源」方向正确 |
+
+**关键洞察**：导出和缩略图能正常处理 HEVC，**正因为**它们走自带 FFmpeg；预览之所以崩，**正因为**它是唯一掉队、还在依赖系统编解码器的一环。把它拉回总纲即可根治——这不是「要不要做」，是消除一处遗留的架构不一致。
+
+### 历史教训（这一环为什么会掉队）
+
+v0.6.0 曾用 LibVLCSharp 替换 MediaElement（**方向对**：自带解码引擎），但实现写错——每次 hover 都重建整个 VLC 生命周期，UI 线程同步阻塞卡死 0.5-2s；v0.6.1 退回 MediaElement「消灭卡死、接受不能预览」，**为了修一个实现 bug，退回了违反总纲的系统编解码方案**，把兼容债留到今天。教训：**实现 bug 不该用「放弃正确架构」来修**——卡死的根因是「per-hover 重建」，不是「自带引擎」本身。
+
+### 反模式（违反总纲即不达标）
+
+- ❌ 任何核心能力依赖「用户机器恰好装了 X」（系统编解码器 / 商店扩展 / 运行库 / 播放器 / 特定显卡）
+- ❌ 预览、缩略图、导出用**不同**的解码 / 编码栈（必然出现「能预览不能导 / 能导不能预览」的自相矛盾）
+- ❌ 为了修一个实现 bug（卡顿 / 崩溃）退回到违反总纲的方案（如退回系统编解码器），把兼容债转嫁给用户机器
+- ❌ 把系统错误码（`0xC00D109B` 等）直接展示给用户，而不是降级 + 人话提示 + 重试 / 替代入口
 
 ---
 
