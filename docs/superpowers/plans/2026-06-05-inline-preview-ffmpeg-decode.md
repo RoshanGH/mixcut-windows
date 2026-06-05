@@ -1,16 +1,16 @@
-# hover 预览统一到自带 FFmpeg 解码 实施计划
+# hover 预览统一到自带 FFmpeg 解码 实施计划（进程外渲染器版）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把分镜卡片 hover 预览的播放内核从 WPF MediaElement（依赖系统编解码器）换成 FFME（自带 FFmpeg 解码），消灭 `0xC00D109B`，实现全格式 + N 版 Windows 通用兼容。
+**Goal:** 把分镜卡片 hover 预览的播放内核从 WPF MediaElement（依赖系统编解码器）换成「进程外 ffmpeg.exe 裸帧渲染器」，消灭 `0xC00D109B`，实现全格式 + N 版 Windows 通用兼容，零新增安装包体积。
 
-**Architecture:** 引入 `Unosquare.FFME` WPF 控件 + LGPL FFmpeg 共享库（放 `Resources/bin/`）。`InlineVideoPlayer` 对外 API（`SetVideo`/`SetSegment`/`AutoPlayOnHover`）不变，5 处调用方零改动，只换内部内核。启动期一次性 `Library.FFmpegDirectory` 指向 `bin/`。每个播放器持有单一 FFME 实例，hover 只 Open/Close，绝不 per-hover 重建（规避 v0.6.0 卡死）。
+**Architecture:** 新建 `FfmpegFramePlayer`（WPF 控件），内部用已打包的 `ffmpeg.exe` 解码：视频走 `-f rawvideo -pix_fmt bgra` 管道 → 后台线程读帧 → `WriteableBitmap`；音频走 `-f s16le` 管道 → WASAPI/NAudio，作主时钟。`InlineVideoPlayer` 对外 API 不变，5 处调用方零改动。所有子进程挂 `ChildProcessTracker`。
 
-**Tech Stack:** C# / WPF / .NET 8 / Unosquare.FFME / FFmpeg(LGPL shared) / Serilog
+**Tech Stack:** C# / WPF / .NET 8 / 内置 ffmpeg.exe(进程外) / WriteableBitmap / NAudio(或 WASAPI) / Serilog
 
-**前置约束（铁律）：**
-- 构建机 `mlamp@100.112.4.71` 离线时**不进入 Task 1+**；Task 0 是所有编码的硬门槛。
-- 参照 CLAUDE.md §兼容性总纲、§不破坏已有功能 SOP、§自我验证铁律。
+**前置约束（铁律）：** 构建机 `mlamp@100.112.4.71` 离线时不进入需要实跑验证的 Step；参照 CLAUDE.md §兼容性总纲、§不破坏已有功能 SOP、§自我验证铁律。每个 Task 在独立 commit。
+
+**spike 结论（2026-06-05，已完成）：** FFME×.NET8 兼容但因 GPL 传染/LGPL4.4 无构建/+40~60MB 三杀被否；改进程外。详见 spec §3。
 
 ---
 
@@ -18,295 +18,260 @@
 
 | 文件 | 责任 | 动作 |
 |---|---|---|
-| `src/MixCut/MixCut.csproj` | 加 FFME PackageReference + LGPL 共享库打包规则 | Modify |
-| `src/MixCut/Resources/bin/*.dll`（构建机） | LGPL FFmpeg 共享库 | Create（仅构建机） |
-| `src/MixCut/App.xaml.cs` | 启动期 `Library.FFmpegDirectory` 初始化 + `[FfmeDiag]` 日志 | Modify |
-| `src/MixCut/Infrastructure/BundledBinaries.cs` | 新增 FFmpeg 共享库存在性探测 | Modify |
-| `src/MixCut/Views/Components/InlineVideoPlayer.xaml` | `MediaElement` → `ffme:MediaElement` | Modify |
-| `src/MixCut/Views/Components/InlineVideoPlayer.xaml.cs` | 事件/属性 API 适配 + 降级逻辑 | Modify |
-| `src/MixCut.Tests/BundledBinariesTests.cs` | 共享库探测单测 | Create |
+| `src/MixCut/Services/VideoProcessing/FramePipeArgs.cs` | 纯函数：拼 ffmpeg 视频/音频管道参数、算帧字节数/PTS | Create |
+| `src/MixCut.Tests/FramePipeArgsTests.cs` | 上述纯函数单测 | Create |
+| `src/MixCut/Views/Components/FfmpegFramePlayer.cs` | WPF 控件：子进程管道→WriteableBitmap 渲染 + 音频时钟 | Create |
+| `src/MixCut/Views/Components/InlineVideoPlayer.xaml` | `MediaElement` → `FfmpegFramePlayer` | Modify |
+| `src/MixCut/Views/Components/InlineVideoPlayer.xaml.cs` | 改调用新控件 API + 降级 | Modify |
+| `src/MixCut/App.xaml.cs` | 启动期 `[FfmeDiag] ffmpeg.exe exists` 诊断 | Modify |
 
 ---
 
-## Task 0：构建机验证 spike（编码硬门槛，构建机必须在线）
-
-**目的：** 钉死三个不确定项，spike 不过则停工并向用户报告，不强行往下做。
-
-**Files:** 无（纯验证，spike 代码用完即弃，不进 main）
-
-- [ ] **Step 1: 确认构建机在线**
-
-Run（Mac）：`ssh -i ~/.ssh/mixcut_win -o IdentitiesOnly=yes -o ConnectTimeout=12 mlamp@100.112.4.71 'whoami'`
-Expected: 输出用户名。超时则停工，告知用户「构建机离线，无法验证，暂不动手」。
-
-- [ ] **Step 2: 验证 FFME 能在 .NET 8 + 当前 WPF restore + 编译**
-
-在构建机建一个最小 WPF .NET 8 临时工程，加 `<PackageReference Include="FFME.Windows" Version="*" />`（注意实际包名，FFME 的包名历史上为 `FFME.Windows`），放一个 `<ffme:MediaElement/>`，`dotnet build`。
-Expected: restore + build 成功。失败 → 记录错误，触发 §9 回退评估。
-
-- [ ] **Step 3: 取得 LGPL FFmpeg 共享库并实测体积**
-
-获取与 FFME 兼容的 **LGPL 构建** FFmpeg 共享库（`avcodec/avformat/avutil/swscale/swresample/avfilter/avdevice` 等 dll）。
-Run：`Get-ChildItem <libdir> -Filter *.dll | Measure-Object -Property Length -Sum`
-记录：版本、总体积、来源 URL。若总体积 + 现有安装包 > Gitee 90MB 单卷 → 标记需 DiskSpanning。
-
-- [ ] **Step 4: dumpbin 静态分析依赖完备性**
-
-对每个 FFmpeg 共享 dll 跑 PE import 扫描（`Get-PeImports`，CLAUDE.md §D 武器库），列出依赖 dll，对照 `bin/` 是否完备（VC Runtime 等）。
-Expected: 无缺失 native 依赖；缺啥记录待 Task 2 补。
-
-- [ ] **Step 5: 真机播 HEVC 冒烟**
-
-用 spike 工程，`Library.FFmpegDirectory=<libdir>`，`Open` 一个真实 HEVC/iPhone「高效」格式 mp4。
-Expected: 能解码出画面、不报 `0xC00D109B`。**这是整个方案成立的核心证据。** 失败 → 触发 §9 回退到「自建 ffmpeg.exe 渲染器」。
-
-- [ ] **Step 6: 把钉死的事实回填 spec**
-
-把 FFME 实际包名/版本、API 签名（`Open`/`Close`/`Position`/`MediaOpened` 事件参数类型）、LGPL 库来源/版本/体积写回 `docs/superpowers/specs/2026-06-05-inline-preview-ffmpeg-decode-design.md` §3/§5/§8，commit。
-后续 Task 1-5 的 FFME API 调用以本步钉死的签名为准。
-
----
-
-## Task 1：引入 FFME 包 + LGPL 共享库打包
+## Task 1：管道参数纯函数 + 单测（先把可测的测了）
 
 **Files:**
-- Modify: `src/MixCut/MixCut.csproj`
-- Create（构建机）: `src/MixCut/Resources/bin/avcodec*.dll` 等（Task 0 取得的库）
-
-- [ ] **Step 1: 加 FFME PackageReference**
-
-按 Task 0 Step 2 钉死的包名/版本，在 `MixCut.csproj` 的 `<ItemGroup>` 加：
-
-```xml
-<PackageReference Include="FFME.Windows" Version="<Task0确认版本>" />
-```
-
-- [ ] **Step 2: 确认共享库随 Content 打包**
-
-`MixCut.csproj` 已有规则（37-41 行）会把 `Resources\bin\**\*` 拷到输出 `bin\`。把 Task 0 的 LGPL 共享库放进构建机 `Resources/bin/`，无需改 csproj。确认 publish 后 `publish/bin/` 含这些 dll。
-
-- [ ] **Step 3: 编译验证（Mac 语法 + 构建机 publish）**
-
-Run（Mac）：`dotnet build src/MixCut/MixCut.csproj -c Release -p:EnableWindowsTargeting=true`
-Expected: 0 错误（语法/类型过）。
-Run（构建机）：远端 `dotnet publish`。
-Expected: 成功，`publish/bin/` 含共享库。
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add src/MixCut/MixCut.csproj
-git commit -m "feat(player): 引入 FFME 包 + LGPL FFmpeg 共享库打包"
-```
-
----
-
-## Task 2：BundledBinaries 共享库探测 + 单测
-
-**Files:**
-- Modify: `src/MixCut/Infrastructure/BundledBinaries.cs`
-- Create: `src/MixCut.Tests/BundledBinariesTests.cs`
+- Create: `src/MixCut/Services/VideoProcessing/FramePipeArgs.cs`
+- Create: `src/MixCut.Tests/FramePipeArgsTests.cs`
 
 - [ ] **Step 1: 写失败测试**
 
-新建 `src/MixCut.Tests/BundledBinariesTests.cs`：
+`src/MixCut.Tests/FramePipeArgsTests.cs`：
 
 ```csharp
-using MixCut.Infrastructure;
+using MixCut.Services.VideoProcessing;
 using Xunit;
 
-public class BundledBinariesTests
+public class FramePipeArgsTests
 {
     [Fact]
-    public void RequiredFfmpegLibs_列表非空且含核心解码库()
+    public void VideoArgs_含裸帧bgra与裁剪缩放与起止()
     {
-        Assert.Contains("avcodec", string.Join(",", BundledBinaries.RequiredFfmpegLibPrefixes));
-        Assert.Contains("avformat", string.Join(",", BundledBinaries.RequiredFfmpegLibPrefixes));
-        Assert.Contains("avutil", string.Join(",", BundledBinaries.RequiredFfmpegLibPrefixes));
+        var args = FramePipeArgs.Video("C:\\v.mp4", start: 1.5, dur: 3.0, w: 320, h: 180, fps: 30);
+        var s = string.Join(" ", args);
+        Assert.Contains("-ss 1.5", s);
+        Assert.Contains("-t 3", s);
+        Assert.Contains("-an", s);
+        Assert.Contains("-f rawvideo", s);
+        Assert.Contains("-pix_fmt bgra", s);
+        Assert.Contains("scale=320:180", s);
+        Assert.Contains("fps=30", s);
+        Assert.Equal("pipe:1", args[^1]);
     }
 
     [Fact]
-    public void ProbeFfmpegLibs_缺目录时返回缺失而非抛异常()
+    public void AudioArgs_含s16le立体声采样率()
     {
-        var (allPresent, missing) = BundledBinaries.ProbeFfmpegLibs("/nonexistent_dir_xyz");
-        Assert.False(allPresent);
-        Assert.NotEmpty(missing);
+        var s = string.Join(" ", FramePipeArgs.Audio("C:\\v.mp4", start: 0, dur: 5));
+        Assert.Contains("-vn", s);
+        Assert.Contains("-f s16le", s);
+        Assert.Contains("-ar 44100", s);
+        Assert.Contains("-ac 2", s);
+    }
+
+    [Fact]
+    public void FrameBytes_等于宽高乘4()
+    {
+        Assert.Equal(320 * 180 * 4, FramePipeArgs.FrameBytes(320, 180));
     }
 }
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run（构建机）：`dotnet test --filter "FullyQualifiedName~BundledBinariesTests"`
-Expected: FAIL（`RequiredFfmpegLibPrefixes`/`ProbeFfmpegLibs` 未定义）。
+Run（构建机）：`dotnet test --filter "FullyQualifiedName~FramePipeArgsTests"`
+Expected: FAIL（`FramePipeArgs` 未定义）。
 
-- [ ] **Step 3: 实现探测方法**
+- [ ] **Step 3: 实现纯函数**
 
-在 `BundledBinaries.cs` 加（库前缀以 Task 0 实际为准，下为典型集）：
+`src/MixCut/Services/VideoProcessing/FramePipeArgs.cs`：
 
 ```csharp
-/// <summary>FFME 解码所需的 FFmpeg 共享库前缀（实际文件名带版本号，如 avcodec-61.dll，用前缀匹配）。</summary>
-public static readonly string[] RequiredFfmpegLibPrefixes = new[]
-{
-    "avcodec", "avformat", "avutil", "swscale", "swresample",
-};
+using System.Globalization;
 
-/// <summary>探测 FFmpeg 共享库在指定目录是否齐全（前缀匹配，兼容版本号后缀）。</summary>
-public static (bool AllPresent, string[] Missing) ProbeFfmpegLibs(string dir)
+namespace MixCut.Services.VideoProcessing;
+
+/// <summary>hover 预览裸帧管道的 ffmpeg 参数拼接（纯函数，便于单测）。</summary>
+public static class FramePipeArgs
 {
-    if (!Directory.Exists(dir))
+    private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>视频裸帧管道：bgra 像素流，已裁剪缩放到卡片尺寸 + 固定 fps。</summary>
+    public static string[] Video(string path, double start, double dur, int w, int h, int fps) => new[]
     {
-        return (false, RequiredFfmpegLibPrefixes);
-    }
-    var files = Directory.GetFiles(dir, "*.dll").Select(Path.GetFileName).ToArray();
-    var missing = RequiredFfmpegLibPrefixes
-        .Where(p => !files.Any(f => f!.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
-        .ToArray();
-    return (missing.Length == 0, missing);
+        "-ss", F(start), "-i", path, "-t", F(dur), "-an",
+        "-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,fps={fps}",
+        "-f", "rawvideo", "-pix_fmt", "bgra", "pipe:1",
+    };
+
+    /// <summary>音频管道：s16le 立体声 44.1k，作主时钟。</summary>
+    public static string[] Audio(string path, double start, double dur) => new[]
+    {
+        "-ss", F(start), "-i", path, "-t", F(dur), "-vn",
+        "-f", "s16le", "-ar", "44100", "-ac", "2", "pipe:1",
+    };
+
+    /// <summary>一帧 bgra 字节数。</summary>
+    public static int FrameBytes(int w, int h) => w * h * 4;
 }
 ```
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run（构建机）：`dotnet test --filter "FullyQualifiedName~BundledBinariesTests"`
-Expected: PASS（2 passed）。
+Run（构建机）：`dotnet test --filter "FullyQualifiedName~FramePipeArgsTests"`
+Expected: PASS（3 passed）。
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/MixCut/Infrastructure/BundledBinaries.cs src/MixCut.Tests/BundledBinariesTests.cs
-git commit -m "feat(player): BundledBinaries 加 FFmpeg 共享库探测 + 单测"
+git add src/MixCut/Services/VideoProcessing/FramePipeArgs.cs src/MixCut.Tests/FramePipeArgsTests.cs
+git commit -m "feat(player): hover 预览裸帧管道参数纯函数 + 单测"
 ```
 
 ---
 
-## Task 3：启动期 FFmpeg 初始化 + 诊断日志
+## Task 2：FfmpegFramePlayer 视频帧泵（先做视频，构建机验 HEVC 渲染）
 
 **Files:**
-- Modify: `src/MixCut/App.xaml.cs`
+- Create: `src/MixCut/Views/Components/FfmpegFramePlayer.cs`
 
-- [ ] **Step 1: 在启动初始化处加 FFME 初始化**
+- [ ] **Step 1: 实现视频帧泵控件（视频-only，音频留 Task 4）**
 
-在 `App.xaml.cs` 应用启动（现有 `[VcRuntimeDiag]`/`[EnvDiag]` 打日志的同一阶段）加：
+`FfmpegFramePlayer.cs`：一个含 `Image` 的 `UserControl`（或继承 `Image`）。要点：
+- 字段：`Process? _proc; Thread? _reader; WriteableBitmap? _bmp; volatile bool _stop;` 尺寸 `_w/_h/_fps`。
+- `public event EventHandler? Ended; public event EventHandler<string>? Failed;`
+- `public void Open(string path, double start, double dur)`：算 `_w/_h`（控件像素，DPI 换算），起子进程：
+  ```csharp
+  var psi = new ProcessStartInfo(BundledBinaries.Ffmpeg)
+  { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
+  foreach (var a in FramePipeArgs.Video(path, start, dur, _w, _h, _fps)) psi.ArgumentList.Add(a);
+  _proc = Process.Start(psi)!;
+  ChildProcessTracker.AddProcess(_proc);   // 铁律：防孤儿
+  ```
+- 后台读帧线程：循环 `ReadFull(stream, frameBuf, FramePipeArgs.FrameBytes(_w,_h))`，读满一帧 → `Dispatcher.BeginInvoke(() => _bmp.WritePixels(...))`；按 `1000/_fps` ms 墙钟节流（Task 4 改音频主时钟）。读到 EOF → `Ended`。
+- `public void Stop()`：`_stop=true`；`_proc` 未退出则 `Kill(entireProcessTree:true)`；join 线程；释放。
+- 所有 `try/catch`，异常 → `Failed?.Invoke(this, msg)`，不抛。
 
-```csharp
-// FFME 自带 FFmpeg 解码：指向内置 bin\ 共享库，彻底不依赖系统编解码器（§兼容性总纲）。
-try
-{
-    Unosquare.FFME.Library.FFmpegDirectory = BundledBinaries.BinDirectory;
-    var (libsOk, libsMissing) = BundledBinaries.ProbeFfmpegLibs(BundledBinaries.BinDirectory);
-    if (libsOk)
-        Serilog.Log.Information("[FfmeDiag] ffmpeg libs={Dir} ok", BundledBinaries.BinDirectory);
-    else
-        Serilog.Log.Warning("[FfmeDiag] ffmpeg libs 缺失: {Missing}", string.Join(",", libsMissing));
-}
-catch (Exception ex)
-{
-    Serilog.Log.Warning(ex, "[FfmeDiag] FFME 初始化失败，预览将退回仅缩略图");
-}
-```
+（完整代码在实现时落地；关键约束：进程/IO 全后台线程，UI 线程只 `WritePixels`；子进程必挂 `ChildProcessTracker`；`Stop` 必 kill。）
 
-- [ ] **Step 2: 构建机 publish + 启动 + grep 诊断**
-
-Run（构建机）：publish → `Stop-Process MixCut` → `Start-Process publish\MixCut.exe` → `Start-Sleep 12`。
-Run：`Get-Content <最新log> | Select-String "[FfmeDiag]"`
-Expected: `[FfmeDiag] ffmpeg libs=...\bin ok`，无 WRN。
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/MixCut/App.xaml.cs
-git commit -m "feat(player): 启动期初始化 FFME FFmpeg 目录 + [FfmeDiag] 诊断"
-```
-
----
-
-## Task 4：InlineVideoPlayer 内核替换（核心，零回归）
-
-**Files:**
-- Modify: `src/MixCut/Views/Components/InlineVideoPlayer.xaml`
-- Modify: `src/MixCut/Views/Components/InlineVideoPlayer.xaml.cs`
-
-> 动手前重读 CLAUDE.md §不破坏已有功能：列出 InlineVideoPlayer 的 8 项能力（spec §6），改完逐项验。FFME API 以 Task 0 Step 6 钉死的签名为准——下方代码为预期形态，签名不符时以实测为准修正。
-
-- [ ] **Step 1: XAML 换控件**
-
-`InlineVideoPlayer.xaml`：根节点加 `xmlns:ffme="clr-namespace:Unosquare.FFME;assembly=ffme.win"`（实际 assembly 名以 Task 0 为准），把 `<MediaElement x:Name="Player" .../>` 换成 `<ffme:MediaElement x:Name="Player" .../>`。保留 `MediaOpened`/`MediaEnded`/`MediaFailed` 事件绑定名（FFME 同名事件，参数类型不同）。
-
-- [ ] **Step 2: 适配 .cs 里的属性/方法**
-
-`InlineVideoPlayer.xaml.cs` 逐处适配（FFME 实测 API 为准）：
-- `Player.Source = new Uri(_videoPath)` + `Player.Play()` → FFME 异步 `await Player.Open(new Uri(_videoPath))`（在 `OnPlayClick` 改为 `async void` 且全 body try/catch）。
-- `Player.Stop(); Player.Close(); Player.Source = null;` → `await Player.Close();`
-- `Player.Position` / `Player.NaturalDuration.HasTimeSpan` → FFME 的 `Player.Position` / `Player.NaturalDuration`（核对类型，FFME 用 `TimeSpan?`/`Duration`）。
-- `Player.CanPause` / `Player.Pause()` → FFME `Player.Pause()`（FFME 始终可暂停，按实测调整 `OnPauseClick`）。
-- `OnMediaFailed`：去掉系统错误码弹窗，改降级（见 Step 3）。
-
-- [ ] **Step 3: 降级逻辑（总纲推论 4）**
-
-把 `OnMediaFailed` 改为不暴露错误码：
-
-```csharp
-private void OnMediaFailed(object? sender, /*FFME MediaFailedEventArgs*/ EventArgs e)
-{
-    Serilog.Log.Warning("[InlinePlayDiag] 解码失败 path={Path}", _videoPath);
-    Stop();
-    // 不弹系统错误码；保留缩略图，UI 不崩。极端损坏文件才会到这里。
-    DurationBadge.Visibility = Visibility.Collapsed;
-}
-```
-
-- [ ] **Step 4: 生命周期防卡死自检（读代码走查）**
-
-确认：每个实例只有一个 `Player`；hover 只 `Open/Close`，无 per-hover `new ffme:MediaElement`；`Open/Close` 全异步不阻塞 UI 线程。逐条对照 spec §4.4。
-
-- [ ] **Step 5: Mac 语法编译**
+- [ ] **Step 2: Mac 语法编译**
 
 Run：`dotnet build src/MixCut/MixCut.csproj -c Release -p:EnableWindowsTargeting=true`
 Expected: 0 错误。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 3: 构建机裸帧管道冒烟（不接 UI，先证管道）**
+
+Run（构建机）：用现有 ffmpeg.exe 对真实 HEVC 片段跑
+`ffmpeg.exe -ss 0 -i <hevc.mp4> -t 1 -an -vf scale=320:180,fps=30 -f rawvideo -pix_fmt bgra -v error pipe:1 | Measure`，确认有 `320*180*4*N` 量级字节流出、exit 0。
+Expected: 字节流非空、无 0xC00D109B。证明现有 ffmpeg 能把 HEVC 解成 bgra 裸帧。
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/MixCut/Views/Components/InlineVideoPlayer.xaml src/MixCut/Views/Components/InlineVideoPlayer.xaml.cs
-git commit -m "feat(player): InlineVideoPlayer 内核 MediaElement→FFME（自带 ffmpeg 解码）"
+git add src/MixCut/Views/Components/FfmpegFramePlayer.cs
+git commit -m "feat(player): FfmpegFramePlayer 视频裸帧泵（进程外 ffmpeg 解码→WriteableBitmap）"
 ```
 
 ---
 
-## Task 5：构建机真机 e2e 回归（8 项能力 + HEVC 验收）
+## Task 3：换入 InlineVideoPlayer（视频-only）+ 真机渲染验证
+
+**Files:**
+- Modify: `src/MixCut/Views/Components/InlineVideoPlayer.xaml`
+- Modify: `src/MixCut/Views/Components/InlineVideoPlayer.xaml.cs`
+- Modify: `src/MixCut/App.xaml.cs`
+
+> 动手前重读 CLAUDE.md §不破坏已有功能，对照 spec §6 的 8 项能力。
+
+- [ ] **Step 1: XAML 换控件**
+
+`InlineVideoPlayer.xaml`：把 `<MediaElement x:Name="Player" .../>` 换成 `<components:FfmpegFramePlayer x:Name="Player" .../>`（加 xmlns）。
+
+- [ ] **Step 2: 适配 .cs**
+
+- `OnPlayClick`：`Player.Open(_videoPath, _segmentStart ?? 0, (_segmentEnd ?? total) - (_segmentStart ?? 0))`。
+- `Stop()`：`Player.Stop()`。
+- 进度/时长：`FfmpegFramePlayer` 暴露 `Position`（由读帧计时累计）供现有 timer 逻辑用；区间到点停沿用现有 `_segmentEnd` timer。
+- `OnMediaEnded` ← `Player.Ended`；`OnMediaFailed` ← `Player.Failed`，改降级（不弹错误码，保留缩略图 + 提示）。
+
+- [ ] **Step 3: 启动诊断**
+
+`App.xaml.cs` 启动期加：
+```csharp
+Serilog.Log.Information("[FfmeDiag] ffmpeg.exe={Path} exists={Ok}",
+    BundledBinaries.Ffmpeg, BundledBinaries.FfmpegAvailable);
+```
+
+- [ ] **Step 4: Mac 语法编译**
+
+Run：`dotnet build src/MixCut/MixCut.csproj -c Release -p:EnableWindowsTargeting=true`
+Expected: 0 错误。
+
+- [ ] **Step 5: 构建机真机：HEVC 能播 + 不卡**
+
+Run（构建机）：publish → 改 `settings.json` `last_nav_item="2"` → 启动 → 导入 HEVC → hover 分镜卡片。
+Expected: 画面正常出现，**不再 0xC00D109B**；连续 hover 多卡不卡死；grep `[FfmeDiag] exists=True`、无预览相关 WRN/ERR。
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/MixCut/Views/Components/InlineVideoPlayer.xaml src/MixCut/Views/Components/InlineVideoPlayer.xaml.cs src/MixCut/App.xaml.cs
+git commit -m "feat(player): InlineVideoPlayer 换 FfmpegFramePlayer（视频，消灭 0xC00D109B）"
+```
+
+---
+
+## Task 4：音频 + 音画同步
+
+**Files:**
+- Modify: `src/MixCut/Views/Components/FfmpegFramePlayer.cs`
+- （可能 Add）音频输出依赖（`NAudio` 或自封 WASAPI）
+
+- [ ] **Step 1: 加音频管道 + 输出**
+
+第二个 ffmpeg 子进程跑 `FramePipeArgs.Audio(...)`，PCM s16le → 音频输出设备（NAudio `WaveOutEvent`/`WasapiOut`）。子进程同样挂 `ChildProcessTracker`。
+
+- [ ] **Step 2: 音频主时钟同步视频**
+
+视频帧 PTS=帧序号/fps；呈现条件改为「音频已播位置 ≥ 帧 PTS」（取代 Task 2 的墙钟节流）。音频位置由输出设备已播字节/(44100*2*2) 算秒。
+
+- [ ] **Step 3: Mac 编译 + 构建机实测漂移**
+
+Run：Mac 编译 0 错误；构建机 hover 播一段有明显口型/节拍的素材，确认音画漂移不可感、Stop 时音视频同时停、无残留 ffmpeg 进程（`Get-Process ffmpeg`）。
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat(player): FfmpegFramePlayer 加音频 + 音频主时钟同步"
+```
+
+---
+
+## Task 5：全量 e2e 回归 + 丝滑验收
 
 **Files:** 无（验证）
 
-- [ ] **Step 1: publish + 启动**
+- [ ] **Step 1: 逐项回归 spec §6 的 8 项能力**
 
-Run（构建机）：publish → `Stop-Process MixCut` → 改 `%APPDATA%\MixCut\settings.json` `last_nav_item="2"`（SegmentLibrary）→ `Start-Process publish\MixCut.exe` → `Start-Sleep 12`。
+hover 自动播/离开停、SetVideo 完整播、SetSegment 区间播+到点停、播放中微调 re-seek、全局单播互斥、缩略图↔播放态切换、进度条拖拽 seek、Unloaded 解绑（+ 无孤儿 ffmpeg）。Expected: 8 项全在。
 
-- [ ] **Step 2: HEVC 验收（核心）**
+- [ ] **Step 2: 丝滑压力**
 
-导入一个真实 HEVC/iPhone「高效」素材 → 分析出分镜 → hover 分镜卡片。
-Expected: 能播出画面，**不再弹 `0xC00D109B`**。grep 日志无 `[InlinePlayDiag] 解码失败`。
+快速扫过 10+ 张分镜卡片，确认不卡死、不堆积 ffmpeg 进程、CPU 不爆。Expected: 流畅；若卡 → 触发 spec §9 回退评估（Flyleaf+LGPL8.1）。
 
-- [ ] **Step 3: 逐项回归 spec §6 的 8 项能力**
+- [ ] **Step 3: （有干净机时）干净 Win10/11 + N 版 e2e**
 
-人工走查（或读 XAML+日志确认）：hover 自动播/离开停、SetVideo 完整播、SetSegment 区间播+到点停、播放中微调 re-seek、全局单播互斥、缩略图↔播放态切换、进度条拖拽 seek、Unloaded 解绑。
-Expected: 8 项全在；连续 hover 多张卡片**不卡死**（对照 v0.6.0 教训）。
+装包到干净 Win10/11（无 HEVC 扩展）→ 导入 HEVC → hover 能播 → 全链路导出。N 版重复。无干净机时标注「待干净机验」。
 
 - [ ] **Step 4: grep 诊断收尾**
 
-Run：`Get-Content <最新log> | Select-String "[FfmeDiag]|[InlinePlayDiag]|ERR|WRN"`
-Expected: `[FfmeDiag] ok`；无与预览相关的 WRN/ERR。
-
-- [ ] **Step 5: （有干净机时）干净 Win10/11 + N 版 e2e**
-
-装安装包到干净 Win10/11（无 HEVC 扩展）→ 导入 HEVC → hover 预览能播 → 全链路导出。N 版机重复。
-Expected: 全绿。无干净机时跳过并在发版 notes/记忆里标注「待干净机验」。
+`Get-Content <log> | Select-String "[FfmeDiag]|ERR|WRN"`：`exists=True`、无预览相关 WRN/ERR。
 
 ---
 
 ## Self-Review 记录
 
-- **Spec 覆盖**：§1 根因→Task 0/4；§3 选型→Task 1；§4.3 初始化→Task 3；§4.4 防卡死→Task 4 Step 4；§4.5 降级→Task 4 Step 3；§5 打包→Task 1+Task 0 Step 3/4；§6 八项能力→Task 5 Step 3；§8 验证门槛→Task 0 + Task 5。全覆盖。
-- **占位扫描**：FFME 精确 API 故意推迟到 Task 0 Step 6 钉死（机器离线无法预先确认，已显式标注「以实测为准」），非偷懒占位。
-- **类型一致**：`RequiredFfmpegLibPrefixes` / `ProbeFfmpegLibs` 在 Task 2 定义、Task 3 使用，签名一致。
-- **风险**：FFME/.NET8 或 HEVC 冒烟不过 → §9 回退「自建 ffmpeg.exe 渲染器」，spec 已留回退路径。
+- **Spec 覆盖**：§3 进程外选型→Task1-4；§4.2 FfmpegFramePlayer→Task2；§4.3 诊断→Task3 Step3；§4.4 同步→Task4；§4.5 降级→Task3 Step2；§6 八项能力→Task5 Step1；§8 验证→各 Task 真机 Step + Task5；§10 纯函数单测→Task1。全覆盖。
+- **占位扫描**：Task2/4 的控件完整 C# 在实现时落地（含关键约束清单），非偷懒占位——WPF 进程/线程/位图плумbing 代码量大，计划给出骨架+硬约束，细节随实现。
+- **类型一致**：`FramePipeArgs.Video/Audio/FrameBytes`（Task1 定义）→ Task2 使用，签名一致；`FfmpegFramePlayer.Open/Stop/Ended/Failed/Position`（Task2 定义）→ Task3 使用，一致。
+- **风险**：丝滑度→Task5 Step2 实测兜底，回退 Flyleaf+LGPL8.1（spec §9）。
