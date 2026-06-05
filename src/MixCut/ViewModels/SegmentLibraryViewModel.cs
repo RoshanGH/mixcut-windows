@@ -393,8 +393,25 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
             _logger.LogError("[Undo] 恢复分镜失败，已回滚: {Msg}", ex.Message);
             return 0;
         }
-        // 重查（恢复的分镜需重新带上 Video 导航属性 + 重算编号 + 刷新筛选）。
-        LoadSegments(CurrentProject);
+        // 只重查恢复的这几个（带 Video 导航），用当前 _context 把同源实例加回内存集合。
+        // 关键：绝不调 LoadSegments —— 它会 dispose 旧 _context、换一个全新 context，
+        // 导致页面上已存在的卡片仍抱着旧 context 的死实例。撤销后再删 / 再微调那些卡片时，
+        // 会拿死实例去新 context 上 Remove/Save，撞「同主键已被另一实例跟踪」而失败
+        // （用户报的「删一个→撤销→再删第二个提示删除失败」的根因）。
+        var ids = snapshots.Select(s => s.Id).ToHashSet();
+        var restoredEntities = _context.Segments
+            .Include(s => s.Video)
+            .Where(s => ids.Contains(s.Id))
+            .ToList();
+        foreach (var entity in restoredEntities)
+        {
+            if (_segments.All(s => s.Id != entity.Id))
+            {
+                _segments.Add(entity);
+            }
+        }
+        RecomputeNumberByVideo();
+        ApplyFilter();
         return restored;
     }
 
@@ -660,20 +677,37 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>删除分镜。</summary>
-    public void DeleteSegment(Segment segment)
+    /// <summary>
+    /// 删除单个分镜。返回 false 表示 DB 保存失败（调用方应提示重试、不入撤销栈）。
+    /// 按 Id 取当前 _context 跟踪的实例再删（而非直接删传入实例）—— 对齐批量删除，
+    /// 避免传入的是旧 context 死实例时撞「同主键已被另一实例跟踪」。
+    /// </summary>
+    public bool DeleteSegment(Segment segment)
     {
+        if (_context is null) return false;
+        var tracked = _context.Segments.FirstOrDefault(s => s.Id == segment.Id);
+        if (tracked is not null)
+        {
+            try
+            {
+                _context.Segments.Remove(tracked);
+                _context.SaveChanges();
+            }
+            catch (Exception ex)
+            {
+                // DB 保存失败：内存不动，UI 与 DB 仍一致；返回 false 让调用方人话提示 + 重试。
+                _logger.LogError("删除分镜保存失败: {Msg}", ex.Message);
+                return false;
+            }
+        }
+        // DB 删除确认成功（或 DB 已无此分镜）后再同步内存与选中态。
         if (SelectedSegment?.Id == segment.Id)
         {
             SelectedSegment = null;
         }
-        if (_context is not null)
-        {
-            _context.Segments.Remove(segment);
-            _context.SaveChanges();
-        }
         _segments.RemoveAll(s => s.Id == segment.Id);
         ApplyFilter();
+        return true;
     }
 
     /// <summary>统计信息。</summary>

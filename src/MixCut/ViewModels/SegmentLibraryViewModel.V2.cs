@@ -271,17 +271,11 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
         if (result != MessageBoxResult.OK) return;
 
         // P0-10 修：右键单删此前直接删、不入撤销栈，导致删完按 Ctrl+Z 提示「没有可撤销的操作」。
-        // 现与批量删除路径对齐：删前快照 → 删除成功才压栈 → Ctrl+Z 调 RestoreSegments 整图恢复。
+        // 现与批量删除路径对齐：删前快照 → 删除成功才压栈 → Ctrl+Z 调 RestoreSegments 恢复。
         var snapshot = Infrastructure.UndoStack.UndoClone.CloneSegment(card.Segment);
-        try
+        if (!DeleteSegment(card.Segment))
         {
-            DeleteSegment(card.Segment);
-        }
-        catch (Exception ex)
-        {
-            // 删除失败（DB 保存异常）：DeleteSegment 在 SaveChanges 抛出前不动内存，UI 与 DB 仍一致。
             // 不谎报成功、不压栈，给人话提示 + 重试入口（对齐批量删除的失败处理）。
-            _logger.LogError("删除分镜失败: {Msg}", ex.Message);
             Views.Components.ToastService.Show("删除失败，请重试", Views.Components.ToastStyle.Error);
             return;
         }
