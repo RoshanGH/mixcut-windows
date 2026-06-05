@@ -128,6 +128,94 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// 叙事结构 AI 自测（issue #6 §六，构建机用真 DeepSeek 跑）：找带标签分镜最多的项目 →
+    /// 取最高频 3 个标签建 3 段 → 调 CreateNarrativeStructureAsync 真生成 → 打变体结果。
+    /// 结果 `[NarrativeSelfTest]` 进日志 + stdout 便于 SSH grep。需 host 已 StartAsync。
+    /// </summary>
+    private async Task RunNarrativeSelfTestAsync()
+    {
+        try
+        {
+            var factory = _host.Services.GetRequiredService<IDbContextFactory<MixCutDbContext>>();
+            var vm = _host.Services.GetRequiredService<SchemeViewModel>();
+
+            // 找带标签分镜最多的项目
+            Models.Project? target = null;
+            var bestTagged = 0;
+            using (var db = factory.CreateDbContext())
+            {
+                var projects = db.Projects
+                    .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
+                    .AsSplitQuery().ToList();
+                foreach (var p in projects)
+                {
+                    var tagged = p.ProjectVideos.Where(pv => pv.Video != null)
+                        .SelectMany(pv => pv.Video!.Segments).Count(s => s.SemanticTypes.Count > 0);
+                    if (tagged > bestTagged)
+                    {
+                        bestTagged = tagged;
+                        target = p;
+                    }
+                }
+            }
+            if (target is null || bestTagged == 0)
+            {
+                EmitSelfTest("[NarrativeSelfTest] NO_DATA 库里没有带标签分镜的项目");
+                return;
+            }
+
+            vm.LoadSchemes(target);
+            var segments = vm.LoadProjectSegments(target);
+
+            // 取出现频率最高的 3 个标签，各建一段
+            var tagCounts = new Dictionary<Models.SemanticType, int>();
+            foreach (var seg in segments)
+            {
+                foreach (var t in seg.SemanticTypes)
+                {
+                    tagCounts[t] = tagCounts.GetValueOrDefault(t) + 1;
+                }
+            }
+            var topTags = tagCounts.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList();
+            if (topTags.Count == 0)
+            {
+                EmitSelfTest("[NarrativeSelfTest] NO_TAGS");
+                return;
+            }
+            var slots = topTags.Select((t, i) => new Models.NarrativeSlot(i + 1, new List<Models.SemanticType> { t })).ToList();
+            EmitSelfTest($"[NarrativeSelfTest] project={target.Name} segs={segments.Count} " +
+                         $"slots={string.Join(" · ", topTags.Select(t => t.ToLabel()))}");
+
+            var result = await vm.CreateNarrativeStructureAsync(target, slots, segments, 3);
+            if (result is not null)
+            {
+                var variants = result.OrderedSchemes;
+                EmitSelfTest($"[NarrativeSelfTest] OK 结构='{result.NarrativeDisplayName}' 变体数={variants.Count} " +
+                             $"名字=[{string.Join(",", variants.Select(v => v.Name))}]");
+                foreach (var v in variants)
+                {
+                    EmitSelfTest($"[NarrativeSelfTest]   {v.Name}: {v.SegmentCount} 段 | {v.SchemeDescription}");
+                }
+            }
+            else
+            {
+                EmitSelfTest("[NarrativeSelfTest] NULL 无连贯变体通过（AI 或二次校验全刷掉）");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[NarrativeSelfTest] 异常");
+            Console.WriteLine("[NarrativeSelfTest] EXCEPTION " + ex.Message);
+        }
+    }
+
+    private static void EmitSelfTest(string line)
+    {
+        Log.Information(line);
+        Console.WriteLine(line);
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         // 隐藏自测模式：`--selftest-preview <视频>` 离屏跑一遍 FfmpegFramePlayer 渲染，
@@ -224,6 +312,14 @@ public partial class App : Application
             var settingsForMigration = _host.Services.GetRequiredService<AppSettings>();
             var loggerForMigration = _host.Services.GetRequiredService<ILogger<App>>();
             EnsureCustomGroupStrategy(db, settingsForMigration, loggerForMigration);
+        }
+
+        // issue #6 叙事结构 AI 自测：`--selftest-narrative` 用真 DeepSeek 跑一次生成后退出（构建机验证）。
+        if (Array.IndexOf(e.Args, "--selftest-narrative") >= 0)
+        {
+            await RunNarrativeSelfTestAsync();
+            Shutdown();
+            return;
         }
 
         // v0.3.1 对齐迁移：把已有分镜缩略图全部重生为「首帧」（用户升级 v0.6.0 后第一次启动自动跑一次）
