@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using MixCut.Models;
 using MixCut.Services.AI;
@@ -226,6 +227,84 @@ public sealed class SchemeGenerationService
         }
 
         return allCompositions;
+    }
+
+    /// <summary>
+    /// 自定义叙事结构生成（issue #6 §六）：固定段序，每段从【该段自己的候选】里挑 1 条，
+    /// 生成 N 个变体，AI 自检台词连贯只输出通过的。段位别名 <c>S{段}_{候选序}</c>（如 S1_3），
+    /// 调用方按 <paramref name="candidatesPerSlot"/> 同序解析别名→Segment，再做程序侧二次校验
+    /// （<see cref="NarrativeCandidatePool.ValidateComposition"/>，不能只信 AI）。
+    /// </summary>
+    public async Task<IReadOnlyList<AICompactComposition>> GenerateNarrativeCompositionsAsync(
+        IReadOnlyList<NarrativeSlot> slots,
+        IReadOnlyList<IReadOnlyList<Segment>> candidatesPerSlot,
+        int variationCount,
+        CancellationToken cancellationToken = default)
+    {
+        if (slots.Count == 0 || candidatesPerSlot.Count != slots.Count || variationCount <= 0)
+        {
+            return Array.Empty<AICompactComposition>();
+        }
+
+        var catalog = BuildNarrativeCatalog(slots, candidatesPerSlot);
+        var prompt = $$"""
+        你是信息流广告混剪专家。下面是一个固定的「叙事结构」(若干段,顺序不可变),
+        每段给了一组候选分镜。任务:为每段从它自己的候选里挑 1 条,组成成片;
+        生成 {{variationCount}} 个不同变体;对每个变体做台词连贯性自检,只输出连贯的。
+
+        ## 叙事结构(段顺序=成片顺序,固定;你只决定每段选哪条)
+        {{catalog}}
+        ## 硬性规则
+        1. 每段必须且只能从【该段自己的候选】里选 1 条;不能借别段候选、不能漏段、不能改段序。
+        2. 同一变体内不得重复使用同一条分镜。
+        3. 生成 {{variationCount}} 个变体,彼此要有差异,不得有两个完全相同的别名组合。
+        4. 连贯性自检——只输出通过的,不通过的直接丢弃:
+           a. 相邻段台词语义衔接,整体像一条完整口播,不跳脱;
+           b. ⚠️ 台词逻辑顺序不能排反:若两条台词本身有先后(同句上/下半句、"首先…其次…"),
+              后半不能排在前半之前;
+           c. 整体符合信息流节奏(开头抓人→中间种草→结尾促单)。
+
+        ## 输出(JSON,只含通过自检的变体;segments 用候选别名,每段 1 个,顺序同段序)
+        {"compositions":[{"segments":["S1_3","S2_1","S3_2"],"desc":"痛点→产品→促单,台词顺承"}]}
+        只输出 JSON,不要其他文字。
+        """;
+
+        try
+        {
+            var provider = _providerManager.CurrentProvider();
+            var response = await provider.GenerateJsonAsync<CompositionResponse>(prompt, cancellationToken);
+            // 只留段数匹配的；进一步的「别名合法 + 无重复 + 在候选池」由调用方用
+            // NarrativeCandidatePool.ValidateComposition 程序侧二次校验。
+            var sized = response.Compositions.Where(c => c.Segments.Count == slots.Count).ToList();
+            _logger.LogInformation("[NarrativeGen] AI 返回 {Total} 变体, 段数匹配 {Sized}",
+                response.Compositions.Count, sized.Count);
+            return sized;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("[NarrativeGen] 生成/解析失败: {Message}", ex.Message);
+            return Array.Empty<AICompactComposition>();
+        }
+    }
+
+    /// <summary>按「段 → 候选列表」组织目录，每条候选带别名 S{段}_{序}、时长、台词（issue §六）。</summary>
+    private static string BuildNarrativeCatalog(
+        IReadOnlyList<NarrativeSlot> slots, IReadOnlyList<IReadOnlyList<Segment>> candidatesPerSlot)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var tagLabels = string.Join("/", slots[i].Tags.Select(t => t.ToLabel()));
+            sb.AppendLine($"段{i + 1} [标签:{tagLabels}] 候选:");
+            var cands = candidatesPerSlot[i];
+            for (var j = 0; j < cands.Count; j++)
+            {
+                var seg = cands[j];
+                var text = seg.Text.Length > 60 ? seg.Text[..60] : seg.Text;
+                sb.AppendLine($"  S{i + 1}_{j + 1} | {seg.Duration.ToString("F1", CultureInfo.InvariantCulture)}s | 台词:{text}");
+            }
+        }
+        return sb.ToString();
     }
 
     // ---- 辅助方法 ----
