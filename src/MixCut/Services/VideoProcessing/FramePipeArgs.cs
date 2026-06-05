@@ -14,14 +14,16 @@ public static class FramePipeArgs
     private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// 视频裸帧管道参数：输出 bgra 像素流（WPF <c>WriteableBitmap</c> 直接可用），
-    /// 已裁剪缩放到卡片尺寸 + 固定 fps，便于按定长帧读取。
+    /// 视频裸帧管道参数：输出 bgra 像素流（WPF <c>WriteableBitmap</c> 直接可用）。
+    /// 关键：<c>scale...decrease</c> 保宽高比缩入 W×H，再 <c>pad</c> 补黑边到**精确 W×H**，
+    /// 这样每帧恒为 <c>W*H*4</c> 字节，读取端可按定长切帧（否则尺寸随源宽高比变化会读乱）。
     /// <c>-ss</c> 放在 <c>-i</c> 前用输入级快速 seek。
     /// </summary>
     public static string[] Video(string path, double start, double dur, int w, int h, int fps) => new[]
     {
         "-ss", F(start), "-i", path, "-t", F(dur), "-an",
-        "-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease,fps={fps}",
+        "-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease," +
+               $"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}",
         "-f", "rawvideo", "-pix_fmt", "bgra", "pipe:1",
     };
 

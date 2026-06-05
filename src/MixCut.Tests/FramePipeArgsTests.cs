@@ -20,6 +20,7 @@ public class FramePipeArgsTests
         Assert.Contains("-f rawvideo", s);
         Assert.Contains("-pix_fmt bgra", s);
         Assert.Contains("scale=320:180", s);
+        Assert.Contains("pad=320:180", s);  // 补黑边到精确尺寸，保证定长帧
         Assert.Contains("fps=30", s);
         Assert.Equal("pipe:1", args[^1]);
     }
