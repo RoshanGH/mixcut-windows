@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MixCut.Infrastructure;
 using MixCut.Services.VideoProcessing;
+using NAudio.Wave;
 
 namespace MixCut.Views.Components;
 
@@ -27,6 +28,11 @@ public class FfmpegFramePlayer : Image
     private Process? _proc;
     private Thread? _reader;
     private WriteableBitmap? _bmp;
+    // 音频：独立 ffmpeg PCM 管道 → NAudio 声卡输出（硬件自然定速，与视频各自跟真实时间）
+    private Process? _audioProc;
+    private Thread? _audioReader;
+    private IWavePlayer? _audioOut;
+    private BufferedWaveProvider? _audioBuf;
     private volatile bool _stop;
     private volatile bool _paused;
     private int _w, _h;
@@ -110,6 +116,8 @@ public class FfmpegFramePlayer : Image
             var proc = _proc;
             _reader = new Thread(() => ReadLoop(proc)) { IsBackground = true, Name = "FfmpegFramePump" };
             _reader.Start();
+
+            StartAudio(path, start, dur); // 音频失败不影响视频
         }
         catch (Exception ex)
         {
@@ -119,11 +127,91 @@ public class FfmpegFramePlayer : Image
         }
     }
 
-    /// <summary>暂停：停止读帧，OS 管道背压会让 ffmpeg 自然阻塞。</summary>
-    public void Pause() => _paused = true;
+    /// <summary>启动音频管道 → NAudio 声卡输出（声卡按 44.1kHz 自然定速）。无音轨视频会静默，不影响视频。</summary>
+    private void StartAudio(string path, double start, double dur)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(BundledBinaries.Ffmpeg)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var a in FramePipeArgs.Audio(path, start, dur <= 0 ? 36000 : dur))
+            {
+                psi.ArgumentList.Add(a);
+            }
+            _audioProc = Process.Start(psi)!;
+            ChildProcessTracker.AddProcess(_audioProc);
+            _audioProc.BeginErrorReadLine();
 
-    /// <summary>恢复读帧。</summary>
-    public void Resume() => _paused = false;
+            _audioBuf = new BufferedWaveProvider(new WaveFormat(44100, 16, 2))
+            {
+                BufferDuration = TimeSpan.FromSeconds(12),
+                DiscardOnBufferOverflow = true,
+            };
+            _audioOut = new WaveOutEvent();
+            _audioOut.Init(_audioBuf);
+            _audioOut.Play();
+
+            var ap = _audioProc;
+            _audioReader = new Thread(() => AudioReadLoop(ap)) { IsBackground = true, Name = "FfmpegAudioPump" };
+            _audioReader.Start();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[InlinePlayDiag] 音频启动失败，仅视频播放");
+        }
+    }
+
+    /// <summary>后台读 PCM → 喂 NAudio 缓冲（带背压，防内存涨）。</summary>
+    private void AudioReadLoop(Process proc)
+    {
+        try
+        {
+            var stream = proc.StandardOutput.BaseStream;
+            var buf = new byte[16384];
+            while (!_stop)
+            {
+                if (_paused)
+                {
+                    Thread.Sleep(20);
+                    continue;
+                }
+                var n = stream.Read(buf, 0, buf.Length);
+                if (n <= 0)
+                {
+                    break; // EOF / 无音轨
+                }
+                // 背压：缓冲过满则等，避免长视频把 PCM 全堆进内存
+                while (!_stop && _audioBuf is not null && _audioBuf.BufferedDuration.TotalSeconds > 3)
+                {
+                    Thread.Sleep(10);
+                }
+                _audioBuf?.AddSamples(buf, 0, n);
+            }
+        }
+        catch (Exception)
+        {
+            // 停止时管道被关闭抛异常，属正常
+        }
+    }
+
+    /// <summary>暂停：停止读帧（OS 管道背压让视频 ffmpeg 阻塞）+ 暂停声卡输出。</summary>
+    public void Pause()
+    {
+        _paused = true;
+        try { _audioOut?.Pause(); } catch (Exception) { }
+    }
+
+    /// <summary>恢复读帧 + 声卡输出。</summary>
+    public void Resume()
+    {
+        _paused = false;
+        try { _audioOut?.Play(); } catch (Exception) { }
+    }
 
     /// <summary>seek 到绝对位置：帧泵无法随机定位，用新起点重启 ffmpeg（保持原片段终点）。</summary>
     public void Seek(double absSec)
@@ -242,6 +330,24 @@ public class FfmpegFramePlayer : Image
         if (reader is not null && reader.IsAlive && reader.ManagedThreadId != Environment.CurrentManagedThreadId)
         {
             reader.Join(TimeSpan.FromMilliseconds(500));
+        }
+
+        // 音频清理
+        var ap = _audioProc;
+        _audioProc = null;
+        if (ap is not null)
+        {
+            try { if (!ap.HasExited) { ap.Kill(entireProcessTree: true); } } catch (Exception) { }
+            try { ap.Dispose(); } catch (Exception) { }
+        }
+        try { _audioOut?.Stop(); _audioOut?.Dispose(); } catch (Exception) { }
+        _audioOut = null;
+        _audioBuf = null;
+        var areader = _audioReader;
+        _audioReader = null;
+        if (areader is not null && areader.IsAlive && areader.ManagedThreadId != Environment.CurrentManagedThreadId)
+        {
+            areader.Join(TimeSpan.FromMilliseconds(500));
         }
     }
 
