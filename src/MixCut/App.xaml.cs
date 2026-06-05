@@ -82,8 +82,154 @@ public partial class App : Application
         services.AddTransient<OnboardingWindow>();
     }
 
+    /// <summary>
+    /// 预览渲染自测：离屏起一个真 <see cref="Views.Components.FfmpegFramePlayer"/>，Open 一个视频，
+    /// 数实际渲染帧数后退出。验证「进程外 ffmpeg 解码 → WPF WriteableBitmap 渲染」整链路在真机能跑
+    /// （尤其 HEVC）。结果 `[PreviewSelfTest] frames=N` 同时进日志与 stdout，便于 SSH grep。
+    /// </summary>
+    private static async Task RunPreviewSelfTestAsync(string path)
+    {
+        try
+        {
+            var player = new Views.Components.FfmpegFramePlayer { Width = 320, Height = 180 };
+            var failed = false;
+            var reason = "";
+            player.Failed += (_, r) => { failed = true; reason = r; };
+            var host = new Window
+            {
+                Width = 360, Height = 240, Left = -3000, Top = -3000,
+                ShowInTaskbar = false, WindowStyle = WindowStyle.None, Content = player,
+            };
+            host.Show();
+            await Task.Delay(200); // 等布局生效（ActualWidth）
+
+            player.Open(path, 0, 3);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.Elapsed < TimeSpan.FromSeconds(6) && !failed)
+            {
+                await Task.Delay(200);
+                if (player.FramesRendered > 0 && !player.IsPlaying)
+                {
+                    break; // 已播完
+                }
+            }
+
+            var line = $"[PreviewSelfTest] path={path} frames={player.FramesRendered} " +
+                       $"lastPos={player.Position.TotalSeconds:F2} failed={failed} reason={reason}";
+            Log.Information(line);
+            Console.WriteLine(line);
+            player.Stop();
+            host.Close();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[PreviewSelfTest] 异常");
+            Console.WriteLine("[PreviewSelfTest] EXCEPTION " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 叙事结构 AI 自测（issue #6 §六，构建机用真 DeepSeek 跑）：找带标签分镜最多的项目 →
+    /// 取最高频 3 个标签建 3 段 → 调 CreateNarrativeStructureAsync 真生成 → 打变体结果。
+    /// 结果 `[NarrativeSelfTest]` 进日志 + stdout 便于 SSH grep。需 host 已 StartAsync。
+    /// </summary>
+    private async Task RunNarrativeSelfTestAsync()
+    {
+        try
+        {
+            var factory = _host.Services.GetRequiredService<IDbContextFactory<MixCutDbContext>>();
+            var vm = _host.Services.GetRequiredService<SchemeViewModel>();
+
+            // 找带标签分镜最多的项目
+            Models.Project? target = null;
+            var bestTagged = 0;
+            using (var db = factory.CreateDbContext())
+            {
+                var projects = db.Projects
+                    .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
+                    .AsSplitQuery().ToList();
+                foreach (var p in projects)
+                {
+                    var tagged = p.ProjectVideos.Where(pv => pv.Video != null)
+                        .SelectMany(pv => pv.Video!.Segments).Count(s => s.SemanticTypes.Count > 0);
+                    if (tagged > bestTagged)
+                    {
+                        bestTagged = tagged;
+                        target = p;
+                    }
+                }
+            }
+            if (target is null || bestTagged == 0)
+            {
+                EmitSelfTest("[NarrativeSelfTest] NO_DATA 库里没有带标签分镜的项目");
+                return;
+            }
+
+            vm.LoadSchemes(target);
+            var segments = vm.LoadProjectSegments(target);
+
+            // 取出现频率最高的 3 个标签，各建一段
+            var tagCounts = new Dictionary<Models.SemanticType, int>();
+            foreach (var seg in segments)
+            {
+                foreach (var t in seg.SemanticTypes)
+                {
+                    tagCounts[t] = tagCounts.GetValueOrDefault(t) + 1;
+                }
+            }
+            var topTags = tagCounts.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList();
+            if (topTags.Count == 0)
+            {
+                EmitSelfTest("[NarrativeSelfTest] NO_TAGS");
+                return;
+            }
+            var slots = topTags.Select((t, i) => new Models.NarrativeSlot(i + 1, new List<Models.SemanticType> { t })).ToList();
+            EmitSelfTest($"[NarrativeSelfTest] project={target.Name} segs={segments.Count} " +
+                         $"slots={string.Join(" · ", topTags.Select(t => t.ToLabel()))}");
+
+            var result = await vm.CreateNarrativeStructureAsync(target, slots, segments, 3);
+            if (result is not null)
+            {
+                var variants = result.OrderedSchemes;
+                EmitSelfTest($"[NarrativeSelfTest] OK 结构='{result.NarrativeDisplayName}' 变体数={variants.Count} " +
+                             $"名字=[{string.Join(",", variants.Select(v => v.Name))}]");
+                foreach (var v in variants)
+                {
+                    EmitSelfTest($"[NarrativeSelfTest]   {v.Name}: {v.SegmentCount} 段 | {v.SchemeDescription}");
+                }
+            }
+            else
+            {
+                EmitSelfTest("[NarrativeSelfTest] NULL 无连贯变体通过（AI 或二次校验全刷掉）");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[NarrativeSelfTest] 异常");
+            Console.WriteLine("[NarrativeSelfTest] EXCEPTION " + ex.Message);
+        }
+    }
+
+    private static void EmitSelfTest(string line)
+    {
+        Log.Information(line);
+        Console.WriteLine(line);
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // 隐藏自测模式：`--selftest-preview <视频>` 离屏跑一遍 FfmpegFramePlayer 渲染，
+        // 数实际渲染帧数后退出。用于构建机自验证「进程外 ffmpeg 解码→WPF 渲染」整链路
+        // （§自我验证铁律：要实证数字，不靠编译过臆断）。正常启动不受影响。
+        var selfTestIdx = Array.IndexOf(e.Args, "--selftest-preview");
+        if (selfTestIdx >= 0)
+        {
+            var path = selfTestIdx + 1 < e.Args.Length ? e.Args[selfTestIdx + 1] : "";
+            await RunPreviewSelfTestAsync(path);
+            Shutdown();
+            return;
+        }
+
         // QW-10：冷启动期 host 启动 + DB 迁移 + 硬件探测有数秒空白，先弹启动闪屏给即时反馈，
         // 避免「双击了没反应」的错觉。try/catch 兜底 —— 闪屏永远不能阻断或拖垮真正的启动。
         SplashWindow? splash = null;
@@ -104,6 +250,11 @@ public partial class App : Application
         // 一行汇总 [EnvDiag] 写日志，关键失败立即弹窗。让用户在撞运行时崩溃前先看到清晰指引。
         var envReport = Infrastructure.EnvironmentDiagnostics.RunAndLog();
         ShowEnvDialogsIfNeeded(envReport);
+
+        // 预览解码栈诊断（§兼容性总纲）：hover 预览用自带 ffmpeg.exe 进程外解码，
+        // 与导出同源、不碰系统编解码器（消灭 0xC00D109B）。确认 ffmpeg.exe 在位。
+        Log.Information("[FfmeDiag] ffmpeg.exe={Path} exists={Ok}",
+            Infrastructure.BundledBinaries.Ffmpeg, Infrastructure.BundledBinaries.FfmpegAvailable);
 
         // 启动时主动跑一次硬件能力探测（包含 encode smoke test + decode hwaccel 选择），
         // 结果写日志。后续所有 ffmpeg / ASR 任务用探测结果按优先级走 GPU/CPU 兜底。
@@ -146,6 +297,9 @@ public partial class App : Application
             // 显式补列（默认 false，对老数据无副作用）。必须在写入新字段前完成。
             AddColumnIfMissing(db, "Strategies", "IsCustomGroup", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(db, "Schemes", "IsManuallyEdited", "INTEGER NOT NULL DEFAULT 0");
+            // issue #6 自定义叙事结构：MixStrategy 新增两列
+            AddColumnIfMissing(db, "Strategies", "IsNarrativeTemplate", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(db, "Strategies", "NarrativeSlotsJson", "TEXT");
 
             // 清理上次未正常完成的中间态视频（崩溃/强退导致状态卡在分析中）。
             // 对齐 macOS 版 MixCutApp.resetStaleAnalyzingStatus。
@@ -158,6 +312,14 @@ public partial class App : Application
             var settingsForMigration = _host.Services.GetRequiredService<AppSettings>();
             var loggerForMigration = _host.Services.GetRequiredService<ILogger<App>>();
             EnsureCustomGroupStrategy(db, settingsForMigration, loggerForMigration);
+        }
+
+        // issue #6 叙事结构 AI 自测：`--selftest-narrative` 用真 DeepSeek 跑一次生成后退出（构建机验证）。
+        if (Array.IndexOf(e.Args, "--selftest-narrative") >= 0)
+        {
+            await RunNarrativeSelfTestAsync();
+            Shutdown();
+            return;
         }
 
         // v0.3.1 对齐迁移：把已有分镜缩略图全部重生为「首帧」（用户升级 v0.6.0 后第一次启动自动跑一次）

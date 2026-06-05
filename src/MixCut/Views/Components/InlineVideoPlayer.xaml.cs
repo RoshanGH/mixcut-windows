@@ -129,12 +129,13 @@ public partial class InlineVideoPlayer : UserControl
         // 如果正在播放：根据新区间调整当前位置
         // - 当前位置 < 新 startTime → seek 到 startTime
         // - 当前位置 > 新 endTime → seek 到 startTime 重头开始（也可选择 Stop()，但用户调 ±0.1s 时连续看到内容更友好）
-        if (PlayingState.Visibility == Visibility.Visible && Player.NaturalDuration.HasTimeSpan)
+        if (PlayingState.Visibility == Visibility.Visible && Player.IsPlaying)
         {
             var posSec = Player.Position.TotalSeconds;
             if (posSec < startTime || posSec > endTime)
             {
-                Player.Position = TimeSpan.FromSeconds(startTime);
+                // 区间变了且当前位置越界：用新区间重启帧泵
+                Player.Open(videoPath, startTime, endTime - startTime);
             }
             ProgressSlider.Minimum = startTime;
             ProgressSlider.Maximum = endTime;
@@ -173,23 +174,24 @@ public partial class InlineVideoPlayer : UserControl
         // 通知其他 InlineVideoPlayer 实例停止（全局唯一播放）
         PlaybackStarted?.Invoke(this);
 
-        Player.Source = new Uri(_videoPath);
         ThumbnailState.Visibility = Visibility.Collapsed;
         PlayingState.Visibility = Visibility.Visible;
-        Player.Play();
+        var start = _segmentStart ?? 0;
+        var dur = _segmentEnd is { } end ? end - start : 0; // 0 = 完整视频播到 EOF
+        Player.Open(_videoPath, start, dur);
         StartTimer();
     }
 
     private void OnPauseClick(object sender, RoutedEventArgs e)
     {
-        if (Player.CanPause)
+        if (!Player.IsPaused)
         {
             Player.Pause();
             PauseButton.Content = "▶";
         }
         else
         {
-            Player.Play();
+            Player.Resume();
             PauseButton.Content = "⏸";
         }
     }
@@ -202,8 +204,6 @@ public partial class InlineVideoPlayer : UserControl
         try
         {
             Player.Stop();
-            Player.Close();
-            Player.Source = null;
         }
         catch (Exception)
         {
@@ -214,41 +214,39 @@ public partial class InlineVideoPlayer : UserControl
         PauseButton.Content = "⏸";
     }
 
-    private void OnMediaOpened(object sender, RoutedEventArgs e)
+    private void OnMediaOpened(object? sender, EventArgs e)
     {
-        if (!Player.NaturalDuration.HasTimeSpan)
-        {
-            return;
-        }
-        var totalSec = Player.NaturalDuration.TimeSpan.TotalSeconds;
+        // 帧泵已用 ffmpeg -ss 从起点开播，无需再 seek。
         var startSec = _segmentStart ?? 0;
-        var endSec = _segmentEnd ?? totalSec;
-
-        DurationText.Text = FormatTime(endSec - startSec);
         ProgressSlider.Minimum = startSec;
-        ProgressSlider.Maximum = endSec;
-
-        // 分镜模式：跳转到起点
-        if (_segmentStart is { } start && start > 0)
+        if (_segmentEnd is { } endSec)
         {
-            Player.Position = TimeSpan.FromSeconds(start);
+            // 分镜模式：起止已知，滑块满量程
+            DurationText.Text = FormatTime(endSec - startSec);
+            ProgressSlider.Maximum = endSec;
+        }
+        else
+        {
+            // 完整视频：无系统级 NaturalDuration，滑块上限随播放位置增长兜底（见 StartTimer）
+            ProgressSlider.Maximum = Math.Max(ProgressSlider.Maximum, startSec + 1);
         }
     }
 
-    private void OnMediaEnded(object sender, RoutedEventArgs e) => Stop();
+    private void OnMediaEnded(object? sender, EventArgs e) => Stop();
 
-    private void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
+    private void OnMediaFailed(object? sender, string reason)
     {
+        // 总纲推论4：不暴露系统错误码/格式提示；静默退回缩略图（Stop 内已切回），仅日志留痕。
+        // HEVC 等格式已由自带 ffmpeg 解码，走到这里基本只剩真正损坏的文件。
+        Serilog.Log.Warning("[InlinePlayDiag] 预览失败: {Reason} path={Path}", reason, _videoPath);
         Stop();
-        MessageBox.Show("视频播放失败：" + e.ErrorException.Message + "\n该格式可能需要系统媒体编解码支持。",
-            "播放错误", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void OnSliderDragStart(object sender, DragStartedEventArgs e) => _isSeeking = true;
 
     private void OnSliderDragEnd(object sender, DragCompletedEventArgs e)
     {
-        Player.Position = TimeSpan.FromSeconds(ProgressSlider.Value);
+        Player.Seek(ProgressSlider.Value); // 帧泵 seek = 用新起点重启 ffmpeg
         _isSeeking = false;
     }
 
@@ -267,10 +265,6 @@ public partial class InlineVideoPlayer : UserControl
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         _timer.Tick += (_, _) =>
         {
-            if (!Player.NaturalDuration.HasTimeSpan)
-            {
-                return;
-            }
             var posSec = Player.Position.TotalSeconds;
 
             // 分镜模式：到达 endTime 自动停止
@@ -278,6 +272,12 @@ public partial class InlineVideoPlayer : UserControl
             {
                 Stop();
                 return;
+            }
+
+            // 完整视频：时长未知，滑块上限随位置增长兜底
+            if (_segmentEnd is null && posSec > ProgressSlider.Maximum)
+            {
+                ProgressSlider.Maximum = posSec;
             }
 
             if (!_isSeeking)

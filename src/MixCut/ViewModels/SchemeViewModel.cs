@@ -51,16 +51,20 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
     public IReadOnlyList<MixScheme> Schemes =>
         Strategies.SelectMany(s => s.OrderedSchemes).ToList();
 
-    /// <summary>AI 生成的策略（排除自定义组合容器）。供 SchemeListView 在「AI 方案」分组渲染。</summary>
+    /// <summary>AI 生成的策略（排除自定义组合容器 + 自定义叙事结构）。供 SchemeListView 在「AI 方案」分组渲染。</summary>
     public IReadOnlyList<MixStrategy> AIStrategies =>
-        Strategies.Where(s => !s.IsCustomGroup).ToList();
+        Strategies.Where(s => !s.IsCustomGroup && !s.IsNarrativeTemplate).ToList();
 
     /// <summary>当前项目的「自定义组合」容器策略（Phase 1 保证恰好 1 条或 null）。</summary>
     public MixStrategy? CustomGroup =>
         Strategies.FirstOrDefault(s => s.IsCustomGroup);
 
+    /// <summary>当前项目的「自定义叙事结构」模板策略（issue #6，可多条）。</summary>
+    public IReadOnlyList<MixStrategy> NarrativeTemplates =>
+        Strategies.Where(s => s.IsNarrativeTemplate).OrderBy(s => s.CreatedAt).ToList();
+
     /// <summary>
-    /// SchemeListView 左栏渲染用的策略顺序：AI 策略在前，自定义组合永远排在最后。
+    /// SchemeListView 左栏渲染用的策略顺序：AI 策略 → 自定义组合 → 自定义叙事结构（issue #6）。
     /// 对齐 Mac SchemeViewModel.orderedStrategiesForDisplay。
     /// </summary>
     public IReadOnlyList<MixStrategy> OrderedStrategiesForDisplay
@@ -73,6 +77,7 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
             {
                 list.Add(custom);
             }
+            list.AddRange(NarrativeTemplates);
             return list;
         }
     }
@@ -799,6 +804,213 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         // 4. 刷新内存集合，让 UI Strategies / CustomGroup / Schemes 全部联动
         LoadSchemes(project);
         return Schemes.FirstOrDefault(s => s.Id == scheme.Id);
+    }
+
+    /// <summary>查当前项目的全部分镜（含语义标签），供叙事结构编辑器算候选数/可选标签。</summary>
+    public IReadOnlyList<Segment> LoadProjectSegments(Project project)
+    {
+        if (_context is null)
+        {
+            return Array.Empty<Segment>();
+        }
+        var dbProject = _context.Projects
+            .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
+            .AsSplitQuery()
+            .FirstOrDefault(p => p.Id == project.Id);
+        if (dbProject is null)
+        {
+            return Array.Empty<Segment>();
+        }
+        return dbProject.ProjectVideos
+            .Where(pv => pv.Video is not null)
+            .SelectMany(pv => pv.Video!.Segments)
+            .ToList();
+    }
+
+    // ---- issue #6：自定义叙事结构创建（候选池 → AI 选片 → 程序侧二次校验 → 落库） ----
+
+    /// <summary>
+    /// 用户在叙事结构编辑器定义好段位（每段一组系统标签）+ 变体数后调用。
+    /// 候选池(并集) → 每段 Top-30 送 AI 选片 → AI 自检连贯 → 程序侧二次校验(段数/无重复/在候选池) →
+    /// 通过的落库为变体「变体一/二…」。全未通过则不留空壳（删除结构）。返回结构策略（或 null）。
+    /// </summary>
+    public async Task<MixStrategy?> CreateNarrativeStructureAsync(
+        Project project,
+        IReadOnlyList<NarrativeSlot> slots,
+        IReadOnlyList<Segment> projectSegments,
+        int variationCount,
+        CancellationToken cancellationToken = default)
+    {
+        if (_context is null || slots.Count == 0 || variationCount <= 0)
+        {
+            return null;
+        }
+
+        // 1. 每段候选池 → Top-30 送审；算可行上限
+        var topPerSlot = slots
+            .Select(slot => (IReadOnlyList<Segment>)NarrativeCandidatePool.TopN(
+                NarrativeCandidatePool.CandidatesForSlot(projectSegments, slot), 30))
+            .ToList();
+        var cap = NarrativeCandidatePool.FeasibleVariantCap(slots, projectSegments, variationCount);
+        if (cap <= 0)
+        {
+            _logger.LogWarning("[NarrativeGen] 有段候选为 0，无法生成 project={ProjectId}", project.Id);
+            return null;
+        }
+
+        // 2. 建结构策略（IsNarrativeTemplate），显示名由段位拼接
+        var strategy = new MixStrategy
+        {
+            IsNarrativeTemplate = true,
+            ProjectId = project.Id,
+            TargetDuration = 0,
+        };
+        strategy.NarrativeSlots = slots.ToList(); // 写 NarrativeSlotsJson
+        strategy.Name = strategy.NarrativeDisplayName;
+        _context.Strategies.Add(strategy);
+        _context.SaveChanges();
+
+        // 3. AI 选片
+        var comps = await _schemeService.GenerateNarrativeCompositionsAsync(
+            slots, topPerSlot, cap, cancellationToken);
+
+        // 4. 别名解析 + 二次校验 + 去重 + 落库
+        var accepted = new HashSet<string>();
+        var variantIdx = 0;
+        foreach (var comp in comps)
+        {
+            var chosen = ResolveNarrativeAliases(comp.Segments, topPerSlot);
+            if (chosen is null)
+            {
+                continue; // 别名非法
+            }
+            var ids = chosen.Select(s => s.Id).ToList();
+            if (!NarrativeCandidatePool.ValidateComposition(slots, projectSegments, ids))
+            {
+                continue; // 段数/重复/不在候选池
+            }
+            if (!accepted.Add(string.Join(",", ids)))
+            {
+                continue; // 与已收变体重复
+            }
+
+            variantIdx++;
+            var scheme = new MixScheme
+            {
+                VariationIndex = variantIdx,
+                SchemeIndex = $"narrative_{variantIdx:D3}",
+                Name = ChineseVariantName(variantIdx),
+                Style = string.Empty,
+                SchemeDescription = comp.Desc,
+                TargetAudience = string.Empty,
+                NarrativeStructure = strategy.NarrativeDisplayName,
+                EstimatedDuration = chosen.Sum(s => s.Duration),
+                IsManuallyEdited = false,
+                StrategyId = strategy.Id,
+                ProjectId = project.Id,
+            };
+            _context.Schemes.Add(scheme);
+            for (var i = 0; i < chosen.Count; i++)
+            {
+                var tracked = _context.Segments.FirstOrDefault(s => s.Id == chosen[i].Id);
+                if (tracked is null)
+                {
+                    continue;
+                }
+                _context.SchemeSegments.Add(new SchemeSegment
+                {
+                    Position = i + 1,
+                    Reasoning = string.Empty,
+                    PositionReasoning = string.Empty,
+                    Scheme = scheme,
+                    Segment = tracked,
+                });
+            }
+        }
+
+        if (variantIdx == 0)
+        {
+            // 全未通过 → 不留空壳
+            _context.Strategies.Remove(strategy);
+            _context.SaveChanges();
+            _logger.LogWarning("[NarrativeGen] 无连贯变体通过，已移除空结构 project={ProjectId}", project.Id);
+            LoadSchemes(project);
+            return null;
+        }
+
+        _context.SaveChanges();
+        _logger.LogInformation("[NarrativeGen] 结构 '{Name}' 生成 {N} 个变体",
+            strategy.NarrativeDisplayName, variantIdx);
+        LoadSchemes(project);
+        return Strategies.FirstOrDefault(s => s.Id == strategy.Id);
+    }
+
+    /// <summary>把 AI 返回的别名序列（S{段}_{候选序}）按 topPerSlot 同序解析回分镜；任一非法→null。</summary>
+    private static List<Segment>? ResolveNarrativeAliases(
+        IReadOnlyList<string> aliases, IReadOnlyList<IReadOnlyList<Segment>> topPerSlot)
+    {
+        var result = new List<Segment>(aliases.Count);
+        foreach (var alias in aliases)
+        {
+            if (!TryParseNarrativeAlias(alias, out var si, out var ci)
+                || si < 0 || si >= topPerSlot.Count
+                || ci < 0 || ci >= topPerSlot[si].Count)
+            {
+                return null;
+            }
+            result.Add(topPerSlot[si][ci]);
+        }
+        return result;
+    }
+
+    /// <summary>解析别名 S{段}_{序}（1-based）→ 0-based 下标。</summary>
+    private static bool TryParseNarrativeAlias(string alias, out int slotIdx, out int candIdx)
+    {
+        slotIdx = candIdx = -1;
+        if (string.IsNullOrEmpty(alias) || alias[0] != 'S')
+        {
+            return false;
+        }
+        var us = alias.IndexOf('_');
+        if (us < 2 || us >= alias.Length - 1)
+        {
+            return false;
+        }
+        if (!int.TryParse(alias.AsSpan(1, us - 1), out var s) || !int.TryParse(alias.AsSpan(us + 1), out var c))
+        {
+            return false;
+        }
+        slotIdx = s - 1;
+        candIdx = c - 1;
+        return true;
+    }
+
+    /// <summary>变体名「变体一/二/三…」（支持 1-99）。</summary>
+    private static string ChineseVariantName(int n)
+    {
+        string[] d = { "零", "一", "二", "三", "四", "五", "六", "七", "八", "九" };
+        string num;
+        if (n <= 0)
+        {
+            num = n.ToString();
+        }
+        else if (n < 10)
+        {
+            num = d[n];
+        }
+        else if (n < 20)
+        {
+            num = "十" + (n % 10 == 0 ? "" : d[n % 10]);
+        }
+        else if (n < 100)
+        {
+            num = d[n / 10] + "十" + (n % 10 == 0 ? "" : d[n % 10]);
+        }
+        else
+        {
+            num = n.ToString();
+        }
+        return "变体" + num;
     }
 
     private void SaveContext()
