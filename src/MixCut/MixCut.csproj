@@ -19,9 +19,9 @@
     <!-- v0.7.0：Ctrl+Z 撤销栈（分镜/方案/策略删除）+ 启动闪屏 + 侧边栏微信入口 +
          AsSplitQuery 性能修复 + 全局按钮样式/nav 淡入/卡片 hover + 一批边界 bug 修复 +
          新建 MixCut.Tests 单元/集成测试工程。 -->
-    <Version>0.7.2</Version>
-    <AssemblyVersion>0.7.2.0</AssemblyVersion>
-    <FileVersion>0.7.2.0</FileVersion>
+    <Version>0.7.3</Version>
+    <AssemblyVersion>0.7.3.0</AssemblyVersion>
+    <FileVersion>0.7.3.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
