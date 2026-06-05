@@ -35,6 +35,8 @@ public partial class SegmentLibraryViewV2 : UserControl, IProjectView
 
         BuildTypeChips();
         _vm.SelectionChanged += OnSelectionChanged;
+        // 右键单删 / Ctrl+Z 恢复后，VM 广播此事件，View 刷新统计 / 类型 chip / 空态（VM 已自行 RebuildGroups）。
+        _vm.SegmentsStructurallyChanged += OnSegmentsStructurallyChanged;
 
         Focusable = true;
         PreviewKeyDown += OnPreviewKeyDown;
@@ -209,6 +211,21 @@ public partial class SegmentLibraryViewV2 : UserControl, IProjectView
         {
             UpdateSelectionToolbar();
             _vm.SyncCheckedToCards();
+        });
+    }
+
+    /// <summary>
+    /// VM 触发的结构性变更（右键单删 / Ctrl+Z 恢复）后刷新 View 侧 chrome。
+    /// VM 已自行 RebuildGroups（卡片增减已生效），这里只补统计 / 类型 chip / 工具栏 / 空态，避免重复 RebuildGroups。
+    /// </summary>
+    private void OnSegmentsStructurallyChanged()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            BuildTypeChips();
+            UpdateStats();
+            UpdateSelectionToolbar();
+            UpdateEmptyState();
         });
     }
 
@@ -406,7 +423,12 @@ public partial class SegmentLibraryViewV2 : UserControl, IProjectView
         if (videoHost is null) return;
         if (videoHost.Content is Components.InlineVideoPlayer) return;
 
-        var player = new Components.InlineVideoPlayer { AutoPlayOnHover = true };
+        // UniformToFill：与卡片静态缩略图(Stretch=UniformToFill)一致铺满固定 9:16 框，修「hover 播放不铺满」。
+        var player = new Components.InlineVideoPlayer
+        {
+            AutoPlayOnHover = true,
+            VideoStretch = System.Windows.Media.Stretch.UniformToFill,
+        };
         player.SetSegment(card.VideoLocalPath!, card.ThumbnailPath, card.StartTime, card.EndTime);
 
         // 关键：监听 CardVM 时间变化，实时同步给 player。

@@ -31,6 +31,22 @@ public partial class InlineVideoPlayer : UserControl
     /// <summary>true 时鼠标停 350ms 自动播放，离开立即停。分镜库默认 true，ImportView 默认 false。</summary>
     public bool AutoPlayOnHover { get; set; }
 
+    /// <summary>
+    /// 视频帧 + 缩略图的填充方式。默认 <see cref="System.Windows.Media.Stretch.Uniform"/>（等比适应、留黑边，ImportView 沿用）。
+    /// 分镜库卡片是固定 9:16 框且 ClipToBounds，且卡片静态缩略图用的是 UniformToFill，
+    /// 故注入到卡片里的 player 设 UniformToFill，让 hover 播放与静态缩略图一致铺满（修「播放不铺满」）。
+    /// 同时设给 Player 与 ThumbImage，保证播放态/缩略态填充行为一致，不出现切换瞬间跳变。
+    /// </summary>
+    public System.Windows.Media.Stretch VideoStretch
+    {
+        get => Player.Stretch;
+        set
+        {
+            Player.Stretch = value;
+            ThumbImage.Stretch = value;
+        }
+    }
+
     public InlineVideoPlayer()
     {
         InitializeComponent();

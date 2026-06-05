@@ -329,7 +329,11 @@
                                         CornerRadius="6" ClipToBounds="True">
                                     <Grid x:Name="ThumbGrid">
                                         <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
-                                        <ContentControl x:Name="VideoHost" />
+                                        <!-- 注入的 InlineVideoPlayer 必须撑满 152x270 框：ContentControl 默认内容对齐 Left/Top
+                                             会让 player 缩到内容尺寸（hover 播放不铺满的结构性根因），显式 Stretch 撑满。 -->
+                                        <ContentControl x:Name="VideoHost"
+                                                        HorizontalContentAlignment="Stretch"
+                                                        VerticalContentAlignment="Stretch" />
 
                                         <!-- 编号徽章（左上） -->
                                         <Border Background="#C01D6BE5" CornerRadius="4"

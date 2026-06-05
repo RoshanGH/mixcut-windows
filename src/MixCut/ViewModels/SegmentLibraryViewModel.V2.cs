@@ -26,6 +26,13 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
     /// <summary>V1 时代用 SelectedSegment 表示单选；V2 同步推送 IsSelected 给 CardVM。</summary>
     private SegmentCardViewModel? _selectedCard;
 
+    /// <summary>
+    /// 分镜结构性变更（右键单删 / Ctrl+Z 撤销恢复）后触发，让 View 刷新统计 / 类型 chip / 空态。
+    /// 对齐 CLAUDE.md §F「数据变更 → UI 刷新通道」：VM 改了 segments 必须广播给 View，否则统计数字停在旧值。
+    /// （批量删除走 View 自己的 RefreshAfterSegmentChange；右键单删由 CardVM 命令触发，View 不在调用链上，故需此事件。）
+    /// </summary>
+    public event Action? SegmentsStructurallyChanged;
+
     // ============ V2 数据装载 ============
 
     /// <summary>切项目 / 筛选 / 排序变化时调用，重建 Groups。</summary>
@@ -259,13 +266,41 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
     void ISegmentCardHost.RequestDelete(SegmentCardViewModel card)
     {
         var result = MessageBox.Show(
-            $"删除分镜 {card.SegmentIndexLabel}？此操作不可恢复。",
+            $"删除分镜 {card.SegmentIndexLabel}？删除后可按 Ctrl+Z 撤销。",
             "确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
         if (result != MessageBoxResult.OK) return;
 
-        DeleteSegment(card.Segment);
+        // P0-10 修：右键单删此前直接删、不入撤销栈，导致删完按 Ctrl+Z 提示「没有可撤销的操作」。
+        // 现与批量删除路径对齐：删前快照 → 删除成功才压栈 → Ctrl+Z 调 RestoreSegments 整图恢复。
+        var snapshot = Infrastructure.UndoStack.UndoClone.CloneSegment(card.Segment);
+        try
+        {
+            DeleteSegment(card.Segment);
+        }
+        catch (Exception ex)
+        {
+            // 删除失败（DB 保存异常）：DeleteSegment 在 SaveChanges 抛出前不动内存，UI 与 DB 仍一致。
+            // 不谎报成功、不压栈，给人话提示 + 重试入口（对齐批量删除的失败处理）。
+            _logger.LogError("删除分镜失败: {Msg}", ex.Message);
+            Views.Components.ToastService.Show("删除失败，请重试", Views.Components.ToastStyle.Error);
+            return;
+        }
         RebuildGroups();
-        Views.Components.ToastService.Show("已删除分镜", Views.Components.ToastStyle.Warning);
+        SegmentsStructurallyChanged?.Invoke();
+
+        Infrastructure.UndoStack.UndoManager.Shared.Push(
+            new Infrastructure.UndoStack.DelegateUndoAction(
+                "删除 1 个分镜",
+                () =>
+                {
+                    var n = RestoreSegments(new[] { snapshot });
+                    RebuildGroups();
+                    SegmentsStructurallyChanged?.Invoke();
+                    Views.Components.ToastService.Show(
+                        n > 0 ? "已恢复 1 个分镜" : "恢复失败，请重试",
+                        n > 0 ? Views.Components.ToastStyle.Success : Views.Components.ToastStyle.Error);
+                }));
+        Views.Components.ToastService.Show("已删除分镜 · Ctrl+Z 撤销", Views.Components.ToastStyle.Warning);
     }
 
     void ISegmentCardHost.ToggleSemanticType(SegmentCardViewModel card, SemanticType type)
