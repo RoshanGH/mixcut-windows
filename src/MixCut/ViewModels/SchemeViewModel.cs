@@ -806,6 +806,27 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         return Schemes.FirstOrDefault(s => s.Id == scheme.Id);
     }
 
+    /// <summary>查当前项目的全部分镜（含语义标签），供叙事结构编辑器算候选数/可选标签。</summary>
+    public IReadOnlyList<Segment> LoadProjectSegments(Project project)
+    {
+        if (_context is null)
+        {
+            return Array.Empty<Segment>();
+        }
+        var dbProject = _context.Projects
+            .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
+            .AsSplitQuery()
+            .FirstOrDefault(p => p.Id == project.Id);
+        if (dbProject is null)
+        {
+            return Array.Empty<Segment>();
+        }
+        return dbProject.ProjectVideos
+            .Where(pv => pv.Video is not null)
+            .SelectMany(pv => pv.Video!.Segments)
+            .ToList();
+    }
+
     // ---- issue #6：自定义叙事结构创建（候选池 → AI 选片 → 程序侧二次校验 → 落库） ----
 
     /// <summary>
