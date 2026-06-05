@@ -41,4 +41,32 @@ public class NarrativeSlotTests
     {
         Assert.Empty(NarrativeSlot.Deserialize("{ 这不是合法 json"));
     }
+
+    [Fact]
+    public void NarrativeDisplayName_段间点号_同段斜杠()
+    {
+        var strat = new MixStrategy { IsNarrativeTemplate = true };
+        strat.NarrativeSlots = new List<NarrativeSlot>
+        {
+            new(1, new List<SemanticType> { SemanticType.PainPoint }),
+            new(2, new List<SemanticType> { SemanticType.Solution }),
+            new(3, new List<SemanticType> { SemanticType.Results, SemanticType.SocialProof }),
+            new(4, new List<SemanticType> { SemanticType.CallToAction }),
+        };
+
+        Assert.Equal("痛点 · 产品方案 · 效果展示/信任背书 · 行动号召", strat.NarrativeDisplayName);
+    }
+
+    [Fact]
+    public void NarrativeSlots_经由Strategy读写JSON往返()
+    {
+        var strat = new MixStrategy();
+        strat.NarrativeSlots = new List<NarrativeSlot>
+        {
+            new(1, new List<SemanticType> { SemanticType.Hook, SemanticType.PainPoint }),
+        };
+        Assert.False(string.IsNullOrEmpty(strat.NarrativeSlotsJson));
+        Assert.Single(strat.NarrativeSlots);
+        Assert.Equal(2, strat.NarrativeSlots[0].Tags.Count);
+    }
 }

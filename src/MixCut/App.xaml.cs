@@ -209,6 +209,9 @@ public partial class App : Application
             // 显式补列（默认 false，对老数据无副作用）。必须在写入新字段前完成。
             AddColumnIfMissing(db, "Strategies", "IsCustomGroup", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(db, "Schemes", "IsManuallyEdited", "INTEGER NOT NULL DEFAULT 0");
+            // issue #6 自定义叙事结构：MixStrategy 新增两列
+            AddColumnIfMissing(db, "Strategies", "IsNarrativeTemplate", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(db, "Strategies", "NarrativeSlotsJson", "TEXT");
 
             // 清理上次未正常完成的中间态视频（崩溃/强退导致状态卡在分析中）。
             // 对齐 macOS 版 MixCutApp.resetStaleAnalyzingStatus。
