@@ -198,6 +198,63 @@ public partial class SchemesView : UserControl, IProjectView
         {
             StrategyList.Children.Add(BuildStrategySection(strategy));
         }
+
+        // issue #6：「＋ 添加结构」入口（自定义叙事结构）
+        StrategyList.Children.Add(BuildAddNarrativeStructureEntry());
+    }
+
+    /// <summary>「＋ 添加结构」入口：打开叙事结构编辑器（issue #6）。</summary>
+    private UIElement BuildAddNarrativeStructureEntry()
+    {
+        var btn = new Button
+        {
+            Content = "＋ 添加结构（自定义叙事结构）",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(14, 8, 14, 12),
+            Padding = new Thickness(12, 8, 12, 8),
+            FontSize = 12,
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1D, 0x6B, 0xE5)),
+            BorderThickness = new Thickness(1),
+            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1D, 0x6B, 0xE5)),
+            Cursor = Cursors.Hand,
+        };
+        btn.Click += OnAddNarrativeStructure;
+        return btn;
+    }
+
+    private void OnAddNarrativeStructure(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_project is null)
+            {
+                return;
+            }
+            var segments = _vm.LoadProjectSegments(_project);
+            if (segments.Count == 0)
+            {
+                Components.ToastService.Show("请先在分镜素材库分析视频，生成带标签的分镜", Components.ToastStyle.Info);
+                return;
+            }
+            var win = new Schemes.NarrativeStructureEditorWindow(_vm, _project, segments)
+            {
+                Owner = Window.GetWindow(this),
+            };
+            var ok = win.ShowDialog();
+            if (ok == true && win.CreatedStructure is not null)
+            {
+                _expandedStrategies.Add(win.CreatedStructure.Id);
+                RefreshStrategyList();
+                Components.ToastService.Show($"已生成结构「{win.CreatedStructure.NarrativeDisplayName}」", Components.ToastStyle.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[NarrativeGen] 打开编辑器失败");
+            Components.ToastService.Show("打开叙事结构编辑器失败", Components.ToastStyle.Error);
+        }
     }
 
     /// <summary>方案生成中的占位（带 spinner + 文案 + 进度）。对齐 Mac SchemeListView 占位。</summary>
@@ -339,27 +396,32 @@ public partial class SchemesView : UserControl, IProjectView
 
         var info = new StackPanel();
         var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
-        if (strategy.IsCustomGroup)
+        if (strategy.IsCustomGroup || strategy.IsNarrativeTemplate)
         {
             nameRow.Children.Add(new TextBlock
             {
-                Text = "✨",
+                Text = strategy.IsNarrativeTemplate ? "📐" : "✨",
                 FontSize = 12,
                 Foreground = new SolidColorBrush(Color.FromRgb(0x7C, 0x3A, 0xED)),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 6, 0),
             });
         }
+        // 叙事结构：名字即段位序列（NarrativeDisplayName）；其它策略用 Name
         nameRow.Children.Add(new TextBlock
         {
-            Text = strategy.Name, FontSize = 12, FontWeight = FontWeights.SemiBold,
+            Text = strategy.IsNarrativeTemplate ? strategy.NarrativeDisplayName : strategy.Name,
+            FontSize = 12, FontWeight = FontWeights.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
         });
         info.Children.Add(nameRow);
+        var subtitle = strategy.IsNarrativeTemplate
+            ? $"📐 自定义叙事结构 · {strategy.NarrativeSlots.Count} 段"
+            : $"🎨 {strategy.Style}   👥 {strategy.TargetAudience}";
         info.Children.Add(new TextBlock
         {
-            Text = $"🎨 {strategy.Style}   👥 {strategy.TargetAudience}",
+            Text = subtitle,
             FontSize = 10, Foreground = Brushes.Gray, Margin = new Thickness(0, 2, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
