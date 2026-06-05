@@ -17,9 +17,10 @@ namespace MixCut.Views.Components;
 /// 彻底不碰系统编解码器（消灭 0xC00D109B）。ffmpeg 把视频解成 bgra 裸帧经 stdout 管道
 /// 流出，后台线程读帧写入 <see cref="WriteableBitmap"/>，UI 线程只做 WritePixels。
 ///
-/// 本版（Task 2/3）：仅视频，墙钟节流。音频 + 音频主时钟同步在后续 Task 加。
+/// 本版（Task 2/3）：仅视频，墙钟节流，支持暂停/恢复/seek。音频 + 音频主时钟同步在后续 Task 加。
 /// 防卡死：进程/管道 IO 全在后台线程；子进程挂 <see cref="ChildProcessTracker"/> 防孤儿；
 /// Stop 必 kill 整棵进程树。
+/// 暂停=不再读帧 → OS 管道背压自然让 ffmpeg 阻塞；seek=用新起点重启 ffmpeg（帧泵无法随机定位）。
 /// </summary>
 public class FfmpegFramePlayer : Image
 {
@@ -27,10 +28,13 @@ public class FfmpegFramePlayer : Image
     private Thread? _reader;
     private WriteableBitmap? _bmp;
     private volatile bool _stop;
-    private int _w, _h, _fps = 30;
+    private volatile bool _paused;
+    private int _w, _h;
+    private readonly int _fps = 30;
+    private string? _path;
     private double _clipStart;     // 片段在源文件中的起点（秒）
-    private double _clipDuration;  // 片段时长（秒），<=0 表示播到 EOF（完整视频）
-    private double _positionSec;   // 当前绝对位置（源文件时间，秒）= _clipStart + 已播
+    private double _clipEndAbs;     // 片段在源文件中的终点（绝对秒）；<=0 表示播到 EOF（完整视频）
+    private double _positionSec;    // 当前绝对位置（源文件时间，秒）= _clipStart + 已播
 
     /// <summary>首帧就绪（对应 MediaElement.MediaOpened）。</summary>
     public event EventHandler? Opened;
@@ -42,14 +46,14 @@ public class FfmpegFramePlayer : Image
     /// <summary>当前绝对播放位置（源文件时间）。对齐 MediaElement.Position 语义。</summary>
     public TimeSpan Position => TimeSpan.FromSeconds(_positionSec);
 
-    /// <summary>片段时长（Open 时传入的 dur）。完整视频且未知时为 0。</summary>
-    public TimeSpan ClipDuration => TimeSpan.FromSeconds(Math.Max(0, _clipDuration));
-
-    /// <summary>片段在源文件中的起点。</summary>
-    public double ClipStart => _clipStart;
-
     /// <summary>是否正在播放（子进程存活）。</summary>
     public bool IsPlaying => _proc is { HasExited: false };
+
+    /// <summary>是否暂停中。</summary>
+    public bool IsPaused => _paused;
+
+    /// <summary>已渲染帧数（诊断/自测用，UI 线程累加）。</summary>
+    public long FramesRendered { get; private set; }
 
     public FfmpegFramePlayer()
     {
@@ -75,10 +79,13 @@ public class FfmpegFramePlayer : Image
         var dpi = VisualTreeHelper.GetDpi(this);
         _w = ClampEven((int)Math.Round(Math.Max(ActualWidth, 160) * dpi.DpiScaleX), 16, 1280);
         _h = ClampEven((int)Math.Round(Math.Max(ActualHeight, 90) * dpi.DpiScaleY), 16, 1280);
+        _path = path;
         _clipStart = start;
-        _clipDuration = dur;
+        _clipEndAbs = dur > 0 ? start + dur : 0;
         _positionSec = start;
         _stop = false;
+        _paused = false;
+        FramesRendered = 0;
 
         try
         {
@@ -95,13 +102,13 @@ public class FfmpegFramePlayer : Image
             }
             _proc = Process.Start(psi)!;
             ChildProcessTracker.AddProcess(_proc); // 铁律：防孤儿
-            // 丢弃 stderr，避免管道缓冲写满阻塞子进程
-            _proc.BeginErrorReadLine();
+            _proc.BeginErrorReadLine();            // 丢弃 stderr，避免管道缓冲写满阻塞子进程
 
             _bmp = new WriteableBitmap(_w, _h, 96, 96, PixelFormats.Bgra32, null);
             Source = _bmp;
 
-            _reader = new Thread(() => ReadLoop(_proc)) { IsBackground = true, Name = "FfmpegFramePump" };
+            var proc = _proc;
+            _reader = new Thread(() => ReadLoop(proc)) { IsBackground = true, Name = "FfmpegFramePump" };
             _reader.Start();
         }
         catch (Exception ex)
@@ -112,12 +119,30 @@ public class FfmpegFramePlayer : Image
         }
     }
 
-    /// <summary>后台读帧循环：按定长切帧、墙钟节流、UI 线程 WritePixels。</summary>
+    /// <summary>暂停：停止读帧，OS 管道背压会让 ffmpeg 自然阻塞。</summary>
+    public void Pause() => _paused = true;
+
+    /// <summary>恢复读帧。</summary>
+    public void Resume() => _paused = false;
+
+    /// <summary>seek 到绝对位置：帧泵无法随机定位，用新起点重启 ffmpeg（保持原片段终点）。</summary>
+    public void Seek(double absSec)
+    {
+        if (_path is null)
+        {
+            return;
+        }
+        var dur = _clipEndAbs > 0 ? Math.Max(0.1, _clipEndAbs - absSec) : 0;
+        Open(_path, absSec, dur);
+    }
+
+    /// <summary>后台读帧循环：按定长切帧、暂停感知墙钟节流、UI 线程 WritePixels。</summary>
     private void ReadLoop(Process proc)
     {
         var frameBytes = FramePipeArgs.FrameBytes(_w, _h);
         var stream = proc.StandardOutput.BaseStream;
         var sw = Stopwatch.StartNew();
+        double pausedAccumMs = 0;
         long frameIndex = 0;
         var opened = false;
 
@@ -125,15 +150,30 @@ public class FfmpegFramePlayer : Image
         {
             while (!_stop)
             {
+                // 暂停：停读 → ffmpeg 背压阻塞；记录暂停时长以校正节流
+                if (_paused)
+                {
+                    var pStart = sw.Elapsed.TotalMilliseconds;
+                    while (_paused && !_stop)
+                    {
+                        Thread.Sleep(20);
+                    }
+                    pausedAccumMs += sw.Elapsed.TotalMilliseconds - pStart;
+                }
+                if (_stop)
+                {
+                    break;
+                }
+
                 var buf = new byte[frameBytes];
                 if (!ReadFull(stream, buf, frameBytes))
                 {
                     break; // EOF / 不足一帧 → 正常结束
                 }
 
-                // 墙钟节流：第 N 帧应在 N/fps 秒呈现
+                // 墙钟节流（扣除暂停时长）：第 N 帧应在 N/fps 秒呈现
                 var targetMs = frameIndex * 1000.0 / _fps;
-                var delay = targetMs - sw.Elapsed.TotalMilliseconds;
+                var delay = targetMs - (sw.Elapsed.TotalMilliseconds - pausedAccumMs);
                 if (delay > 1 && !_stop)
                 {
                     Thread.Sleep((int)Math.Min(delay, 200));
@@ -153,6 +193,7 @@ public class FfmpegFramePlayer : Image
                     }
                     _bmp.WritePixels(new Int32Rect(0, 0, _w, _h), buf, _w * 4, 0);
                     _positionSec = absSec;
+                    FramesRendered++;
                     if (first)
                     {
                         Opened?.Invoke(this, EventArgs.Empty);
@@ -181,6 +222,7 @@ public class FfmpegFramePlayer : Image
     public void Stop()
     {
         _stop = true;
+        _paused = false;
         var proc = _proc;
         _proc = null;
         if (proc is not null)

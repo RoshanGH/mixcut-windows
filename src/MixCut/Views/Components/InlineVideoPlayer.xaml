@@ -1,6 +1,7 @@
 <UserControl x:Class="MixCut.Views.Components.InlineVideoPlayer"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:components="clr-namespace:MixCut.Views.Components"
              Background="Black">
     <Grid x:Name="RootGrid">
         <!-- 缩略图态 -->
@@ -26,10 +27,8 @@
 
         <!-- 播放态 -->
         <Grid x:Name="PlayingState" Visibility="Collapsed">
-            <MediaElement x:Name="Player" LoadedBehavior="Manual" UnloadedBehavior="Stop"
-                          Stretch="Uniform" ScrubbingEnabled="True"
-                          MediaOpened="OnMediaOpened" MediaEnded="OnMediaEnded"
-                          MediaFailed="OnMediaFailed" />
+            <components:FfmpegFramePlayer x:Name="Player" Stretch="Uniform"
+                          Opened="OnMediaOpened" Ended="OnMediaEnded" Failed="OnMediaFailed" />
             <!-- 控制栏 -->
             <Border VerticalAlignment="Bottom" Background="#A0000000" Padding="6,3">
                 <Grid>
