@@ -736,7 +736,7 @@ public partial class ImportViewModel : ObservableObject
             {
                 var prev = segments[i - 1];
                 prev.EndTime = seg.EndTime;
-                prev.Text += seg.Text;
+                prev.Text = JoinSegmentText(prev.Text, seg.Text);
                 var kw = prev.Keywords.ToList();
                 kw.AddRange(seg.Keywords.Where(k => !kw.Contains(k)));
                 prev.Keywords = kw;
@@ -747,12 +747,23 @@ public partial class ImportViewModel : ObservableObject
             {
                 var next = segments[1];
                 next.StartTime = seg.StartTime;
-                next.Text = seg.Text + next.Text;
+                next.Text = JoinSegmentText(seg.Text, next.Text);
                 db.Segments.Remove(seg);
                 segments.RemoveAt(0);
             }
         }
+
+        // 合并删掉了中间分镜，SegmentIndex 会跳号（seg_001/seg_003…），V1 角标 / 删除确认 /
+        // 导出命名都会显示诡异跳号。合并完重排为连续编号。
+        for (var k = 0; k < segments.Count; k++)
+        {
+            segments[k].SegmentIndex = $"seg_{k + 1:D3}";
+        }
     }
+
+    /// <summary>拼接两段相邻分镜的台词，中间补空格避免「上句下句」直接粘连（任一为空返回另一个）。</summary>
+    private static string JoinSegmentText(string a, string b) =>
+        string.IsNullOrEmpty(a) ? b : string.IsNullOrEmpty(b) ? a : a + " " + b;
 
     /// <summary>根据时间范围从 ASR words 中精确提取台词（中心点匹配）。</summary>
     private static string ExtractTextFromAsr(IReadOnlyList<AsrWord> words, double startTime, double endTime)
