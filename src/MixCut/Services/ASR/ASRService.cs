@@ -57,6 +57,10 @@ public sealed class ASRService
     /// </summary>
     private static readonly SemaphoreSlim WhisperSemaphore = new(1, 1);
 
+    /// <summary>whisper 槽位是否已被占用（前面有视频正在跑 whisper）。ImportViewModel 据此在
+    /// ASR 阶段显示「排队中」，避免多视频时后面的卡在 0% 让用户以为卡死（CLAUDE.md §1）。</summary>
+    public static bool IsWhisperBusy => WhisperSemaphore.CurrentCount == 0;
+
     /// <summary>解析 whisper-cli stderr 中 "progress = N%" 的正则。</summary>
     private static readonly Regex ProgressRegex = new(
         @"progress\s*=\s*(\d+)\s*%", RegexOptions.Compiled);

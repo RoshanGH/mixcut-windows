@@ -131,7 +131,7 @@ public partial class ImportViewModel : ObservableObject
     };
 
     /// <summary>报告某个视频在某个阶段的内部进度（0.0-1.0），换算成整体百分比并通知 UI。</summary>
-    private void ReportVideoStage(Guid videoId, VideoStage stage, double stagePercent)
+    private void ReportVideoStage(Guid videoId, VideoStage stage, double stagePercent, bool queued = false)
     {
         var idx = (int)stage;
         if (idx < 0 || idx >= StageRanges.Length)
@@ -141,9 +141,11 @@ public partial class ImportViewModel : ObservableObject
         var (start, end, label) = StageRanges[idx];
         var clamped = Math.Clamp(stagePercent, 0.0, 1.0);
         var overall = start + (end - start) * clamped;
-        var pctText = stage is VideoStage.Completed or VideoStage.Failed
-            ? label
-            : $"{label} {clamped * 100:F0}%";
+        var pctText = queued
+            ? $"{label}·排队中…"
+            : stage is VideoStage.Completed or VideoStage.Failed
+                ? label
+                : $"{label} {clamped * 100:F0}%";
 
         var state = new VideoProgressState(stage, clamped, overall, pctText);
         _videoProgress[videoId] = state;
@@ -423,7 +425,9 @@ public partial class ImportViewModel : ObservableObject
         Phase = ImportPhase.Transcribing;
         video.Status = VideoStatus.Transcribing;
         await db.SaveChangesAsync();
-        ReportVideoStage(videoId, VideoStage.Asr, 0);
+        // whisper 全局串行：若槽位被前一个视频占用，本视频会在 TranscribeAsync 内 WaitAsync 阻塞。
+        // 此时显示「排队中」而非停在 0%，避免用户误以为卡死（CLAUDE.md §1 进度反馈）。
+        ReportVideoStage(videoId, VideoStage.Asr, 0, queued: ASRService.IsWhisperBusy);
 
         var asr = TranscriptionResult.Empty();
         try
