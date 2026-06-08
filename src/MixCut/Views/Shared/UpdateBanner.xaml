@@ -5,8 +5,8 @@
     <Border Padding="14,8">
         <Border.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                <GradientStop Color="#7C3AED" Offset="0"/>
-                <GradientStop Color="#2563EB" Offset="1"/>
+                <GradientStop Color="{StaticResource PurpleAccent}" Offset="0"/>
+                <GradientStop Color="{StaticResource AccentBlue}" Offset="1"/>
             </LinearGradientBrush>
         </Border.Background>
         <Grid>
@@ -18,7 +18,7 @@
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="立即下载更新" Click="OnDownloadClick"
-                        Background="White" Foreground="#7C3AED" BorderThickness="0"
+                        Background="White" Foreground="{StaticResource PurpleAccentBrush}" BorderThickness="0"
                         Padding="12,4" Cursor="Hand" Margin="0,0,8,0"
                         FontWeight="SemiBold"
                         ToolTip="打开 release 页面下载新版本"/>

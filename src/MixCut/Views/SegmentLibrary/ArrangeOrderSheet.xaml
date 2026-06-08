@@ -55,7 +55,7 @@
                         Width="80" Height="32" Background="#2D2D33" Foreground="White"
                         BorderThickness="0" Margin="0,0,8,0" Cursor="Hand"/>
                 <Button x:Name="GenerateButton" Content="{Binding GenerateButtonText}" Click="OnGenerateClick"
-                        Width="160" Height="32" Background="#7C3AED" Foreground="White"
+                        Width="160" Height="32" Background="{StaticResource PurpleAccentBrush}" Foreground="White"
                         BorderThickness="0" Cursor="Hand"/>
             </StackPanel>
         </Grid>

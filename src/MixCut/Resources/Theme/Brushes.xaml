@@ -62,6 +62,7 @@
 
     <!-- 紫（方案 / AI 生成） -->
     <SolidColorBrush x:Key="PurpleAccentBrush" Color="#9333EA" />
+    <SolidColorBrush x:Key="PurpleAccentDarkBrush" Color="#7E22CE" />
     <SolidColorBrush x:Key="PurpleAccentVariantBrush" Color="#8C5BE5" />
     <SolidColorBrush x:Key="PurpleAccentLightBrush" Color="#F4E8FF" />
 

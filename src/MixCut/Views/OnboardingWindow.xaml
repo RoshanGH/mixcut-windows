@@ -31,7 +31,7 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBlock Text="✨" FontSize="14" Foreground="#8C5BE5"
+                            <TextBlock Text="✨" FontSize="14" Foreground="{StaticResource PurpleAccentBrush}"
                                        Width="22" VerticalAlignment="Center" />
                             <TextBlock Text="智能排列组合生成差异化广告视频" FontSize="12"
                                        VerticalAlignment="Center" />
@@ -49,7 +49,7 @@
             <!-- Step 1 API Key -->
             <StackPanel x:Name="ApiKeyPage" VerticalAlignment="Center" Visibility="Collapsed">
                 <TextBlock Text="🔑" FontSize="50" HorizontalAlignment="Center"
-                           Foreground="#E67E22" Margin="0,0,0,8" />
+                           Foreground="{StaticResource WarningOrangeBrush}" Margin="0,0,0,8" />
                 <TextBlock Text="第一步 · 配置 AI Key" FontSize="22" FontWeight="Bold"
                            HorizontalAlignment="Center" />
                 <TextBlock Text="MixCut 需要大模型完成语义分析与混剪策略"
@@ -117,7 +117,7 @@
             <!-- Step 3 生成 -->
             <StackPanel x:Name="GeneratePage" VerticalAlignment="Center" Visibility="Collapsed">
                 <TextBlock Text="✨" FontSize="50" HorizontalAlignment="Center"
-                           Foreground="#8C5BE5" Margin="0,0,0,8" />
+                           Foreground="{StaticResource PurpleAccentBrush}" Margin="0,0,0,8" />
                 <TextBlock Text="第三步 · 生成方案并导出" FontSize="22" FontWeight="Bold"
                            HorizontalAlignment="Center" />
                 <TextBlock Text="AI 先制定策略，再挑选具体分镜，批量混剪"
@@ -126,13 +126,13 @@
                 <Border Background="#F4F5F7" CornerRadius="12" Padding="18">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBlock Text="📋" FontSize="14" Foreground="#8C5BE5"
+                            <TextBlock Text="📋" FontSize="14" Foreground="{StaticResource PurpleAccentBrush}"
                                        Width="22" VerticalAlignment="Center" />
                             <TextBlock Text="在「混剪方案」点「生成方案」"
                                        FontSize="12" VerticalAlignment="Center" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBlock Text="✨" FontSize="14" Foreground="#8C5BE5"
+                            <TextBlock Text="✨" FontSize="14" Foreground="{StaticResource PurpleAccentBrush}"
                                        Width="22" VerticalAlignment="Center" />
                             <TextBlock Text="AI 自动制定风格、受众、叙事结构"
                                        FontSize="12" VerticalAlignment="Center" />

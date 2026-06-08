@@ -87,7 +87,7 @@
                 </Border>
 
                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <TextBlock Text="⚡" FontSize="11" Foreground="#E67E22" />
+                    <TextBlock Text="⚡" FontSize="11" Foreground="{StaticResource WarningOrangeBrush}" />
                     <TextBlock Text="trim+setpts 精确切片：每段从关键帧开始，无开头黑屏"
                                FontSize="10" Foreground="#888" Margin="4,0,0,0" />
                 </StackPanel>

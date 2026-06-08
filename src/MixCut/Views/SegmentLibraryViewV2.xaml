@@ -123,7 +123,7 @@
                                 BorderThickness="1" Padding="9,3" Margin="0,0,12,0"
                                 FontSize="11" Cursor="Hand" />
                         <Button x:Name="CombineSchemeButton" Content="✨ 组合为方案"
-                                Background="#7C3AED" Foreground="White"
+                                Background="{StaticResource PurpleAccentBrush}" Foreground="White"
                                 BorderThickness="0"
                                 Padding="12,3" Margin="0,0,4,0"
                                 FontSize="11" Cursor="Hand"
@@ -139,7 +139,7 @@
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="r" Property="Background" Value="#6B2DD9"/>
+                                            <Setter TargetName="r" Property="Background" Value="{StaticResource PurpleAccentDarkBrush}"/>
                                         </Trigger>
                                         <Trigger Property="IsEnabled" Value="False">
                                             <Setter TargetName="r" Property="Opacity" Value="0.55"/>
