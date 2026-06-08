@@ -40,7 +40,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" x:Name="OutputDirText"
                                    Text="未选择" FontSize="11"
-                                   FontFamily="Consolas" Foreground="#888"
+                                   FontFamily="{StaticResource FontFamilyMono}" Foreground="#888"
                                    TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center" />
                         <Button Grid.Column="1" Content="选择…" Padding="14,3" Margin="8,0,0,0"
@@ -57,7 +57,7 @@
                     <TextBlock x:Name="FileListLabel" Text="文件列表" FontSize="11"
                                FontWeight="SemiBold" Foreground="#888" />
                     <TextBlock Grid.Column="1" x:Name="TotalDurationText"
-                               FontSize="10" FontFamily="Consolas" Foreground="#AAA" />
+                               FontSize="10" FontFamily="{StaticResource FontFamilyMono}" Foreground="#AAA" />
                 </Grid>
                 <Border Background="#FAFAFC" CornerRadius="6" Padding="6" MaxHeight="200">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -73,11 +73,11 @@
                                         <TextBlock Text="🎞" FontSize="10" Foreground="#AAA"
                                                    VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" Text="{Binding FileName}"
-                                                   FontSize="11" FontFamily="Consolas"
+                                                   FontSize="11" FontFamily="{StaticResource FontFamilyMono}"
                                                    TextTrimming="CharacterEllipsis"
                                                    Margin="4,0" />
                                         <TextBlock Grid.Column="2" Text="{Binding DurationText}"
-                                                   FontSize="10" FontFamily="Consolas"
+                                                   FontSize="10" FontFamily="{StaticResource FontFamilyMono}"
                                                    Foreground="#AAA" />
                                     </Grid>
                                 </DataTemplate>
@@ -105,7 +105,7 @@
                                FontWeight="SemiBold" Foreground="#1D6BE5" />
                 </Grid>
                 <ProgressBar x:Name="ProgressBar" Height="6" Maximum="1" />
-                <TextBlock x:Name="CurrentItemText" FontSize="11" FontFamily="Consolas"
+                <TextBlock x:Name="CurrentItemText" FontSize="11" FontFamily="{StaticResource FontFamilyMono}"
                            Foreground="#666" Margin="0,10,0,0"
                            TextTrimming="CharacterEllipsis" />
                 <TextBlock x:Name="CurrentSubText" FontSize="10" Foreground="#888"
@@ -125,7 +125,7 @@
                                    Margin="0,2,0,0" />
                     </StackPanel>
                 </StackPanel>
-                <TextBlock x:Name="ResultPathText" FontSize="10" FontFamily="Consolas"
+                <TextBlock x:Name="ResultPathText" FontSize="10" FontFamily="{StaticResource FontFamilyMono}"
                            Foreground="#AAA" TextTrimming="CharacterEllipsis" />
                 <Border x:Name="FailedListBox" Background="#FFF5F5" CornerRadius="6"
                         Padding="8" Margin="0,8,0,0" MaxHeight="120"
@@ -140,7 +140,7 @@
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding Name}" FontSize="10"
-                                                   FontFamily="Consolas"
+                                                   FontFamily="{StaticResource FontFamilyMono}"
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Column="1" Text="{Binding Error}"
                                                    FontSize="10" Foreground="#888"
