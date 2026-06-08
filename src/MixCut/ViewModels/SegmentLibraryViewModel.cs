@@ -471,10 +471,13 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         }
         if (!string.IsNullOrEmpty(Filter.SearchText))
         {
-            var query = Filter.SearchText.ToLowerInvariant();
+            // 性能：用 OrdinalIgnoreCase 比较替代 ToLowerInvariant().Contains() —— 后者对每个
+            // segment 的 Text + 每个 Keyword 都分配一个小写字符串副本，几百个分镜 × 每次按键
+            // 全量重算会卡顿。OrdinalIgnoreCase 零分配，对中英文搜索结果等价。
+            var query = Filter.SearchText;
             result = result.Where(s =>
-                s.Text.ToLowerInvariant().Contains(query) ||
-                s.Keywords.Any(k => k.ToLowerInvariant().Contains(query)));
+                s.Text.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                s.Keywords.Any(k => k.Contains(query, StringComparison.OrdinalIgnoreCase)));
         }
 
         // 默认排序：先按视频原始导入顺序，组内按 StartTime。
