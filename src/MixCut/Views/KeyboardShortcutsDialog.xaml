@@ -36,15 +36,15 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl + N"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="0" Grid.Column="1" Text="新建项目" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl + ,"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="打开设置" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl + /"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="2" Grid.Column="1" Text="显示快捷键帮助" FontSize="11" />
                 </Grid>
 
@@ -63,23 +63,23 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl + 1"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="0" Grid.Column="1" Text="项目概览" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl + 2"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="素材导入" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl + 3"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="2" Grid.Column="1" Text="分镜素材库" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="Ctrl + 4"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="3" Grid.Column="1" Text="混剪方案" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="4" Grid.Column="0" Text="Ctrl + 5"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="4" Grid.Column="1" Text="导出" FontSize="11" />
                 </Grid>
 
@@ -97,19 +97,19 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl + A"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="0" Grid.Column="1" Text="全选可见分镜" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl + D"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="反选可见分镜" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl + 0"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="2" Grid.Column="1" Text="清空选择" FontSize="11"
                                Margin="0,0,0,4" />
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="Esc"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="3" Grid.Column="1" Text="退出多选模式" FontSize="11" />
                 </Grid>
 
@@ -126,15 +126,15 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Esc"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="0" Grid.Column="1" Text="关闭当前对话框 / 取消操作"
                                FontSize="11" Margin="0,0,0,4" />
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Enter"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="确认 / 提交 / 下一步"
                                FontSize="11" Margin="0,0,0,4" />
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="F2"
-                               FontFamily="Consolas" FontSize="11" Foreground="#1D6BE5" />
+                               FontFamily="Consolas" FontSize="11" Foreground="{StaticResource AccentBlueBrush}" />
                     <TextBlock Grid.Row="2" Grid.Column="1" Text="重命名当前项目（侧边栏选中后）"
                                FontSize="11" />
                 </Grid>
