@@ -292,7 +292,7 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"方案生成失败: {ex.Message}";
+            ErrorMessage = $"方案生成失败：{ExceptionTranslator.ToUserMessage(ex)}";
             // 用 LogError 的 exception 重载，stack trace 才会进日志（之前写法只塞了 ex.ToString()）。
             _logger.LogError(ex, "方案生成失败: {Message}", ex.Message);
             // P0-22/P1-72：失败后必须回滚 ProjectStatus，否则项目永久卡在「生成方案中」，

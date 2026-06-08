@@ -263,7 +263,7 @@ public partial class ImportViewModel : ObservableObject
             }
             catch (Exception ex)
             {
-                AppendError($"导入 {Path.GetFileName(deduped[index])} 失败: {ex.Message}");
+                AppendError($"导入 {Path.GetFileName(deduped[index])} 失败：{ExceptionTranslator.ToUserMessage(ex)}");
             }
         }
 
@@ -363,7 +363,7 @@ public partial class ImportViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            video.ErrorMessage = $"元数据提取失败: {ex.Message}";
+            video.ErrorMessage = $"元数据提取失败：{ExceptionTranslator.ToUserMessage(ex)}";
         }
 
         // 生成视频缩略图（失败不阻塞）。
@@ -415,7 +415,7 @@ public partial class ImportViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            video.ErrorMessage = (video.ErrorMessage ?? string.Empty) + $"\n本地分析失败: {ex.Message}";
+            video.ErrorMessage = (video.ErrorMessage ?? string.Empty) + $"\n本地分析失败：{ExceptionTranslator.ToUserMessage(ex)}";
         }
         ReportVideoStage(videoId, VideoStage.SceneDetect, 1.0);
 
@@ -444,7 +444,7 @@ public partial class ImportViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError("ASR 异常: {Message}", ex.Message);
-            video.ErrorMessage = (video.ErrorMessage ?? string.Empty) + $"\n语音识别失败: {ex.Message}";
+            video.ErrorMessage = (video.ErrorMessage ?? string.Empty) + $"\n语音识别失败：{ExceptionTranslator.ToUserMessage(ex)}";
         }
 
         video.Transcript = asr.Text;
@@ -935,7 +935,7 @@ public partial class ImportViewModel : ObservableObject
             if (video is not null
                 && video.Status is VideoStatus.DetectingScenes or VideoStatus.Transcribing or VideoStatus.Analyzing)
             {
-                video.ErrorMessage = (video.ErrorMessage ?? string.Empty) + $"\n分析失败: {error.Message}";
+                video.ErrorMessage = (video.ErrorMessage ?? string.Empty) + $"\n分析失败：{ExceptionTranslator.ToUserMessage(error)}";
                 video.Status = VideoStatus.Failed;
                 await db.SaveChangesAsync();
                 _logger.LogError("兜底标记失败: videoId={Id}, error={Message}", videoId, error.Message);
