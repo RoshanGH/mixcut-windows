@@ -22,7 +22,8 @@ public readonly record struct ExportProgress(ExportPhase Phase, double Progress,
 public sealed record ExportInput(
     IReadOnlyList<(string Path, double Start, double End)> Segments,
     int MaxWidth,
-    int MaxHeight)
+    int MaxHeight,
+    int SkippedCount = 0)
 {
     /// <summary>从 MixScheme 提取导出数据；无有效分镜时返回 null。</summary>
     public static ExportInput? FromScheme(MixScheme scheme)
@@ -34,6 +35,7 @@ public sealed record ExportInput(
         }
 
         var segments = new List<(string Path, double Start, double End)>();
+        var skipped = 0;
         var maxWidth = 0;
         var maxHeight = 0;
         foreach (var schemeSeg in ordered)
@@ -42,6 +44,7 @@ public sealed record ExportInput(
             var video = segment?.Video;
             if (segment is null || video is null || !File.Exists(video.LocalPath))
             {
+                skipped++; // 源文件丢失的分镜：统计后由调用方告知用户，不静默少导出
                 continue;
             }
             segments.Add((video.LocalPath, segment.StartTime, segment.EndTime));
@@ -49,7 +52,7 @@ public sealed record ExportInput(
             maxHeight = Math.Max(maxHeight, video.Height);
         }
 
-        return segments.Count == 0 ? null : new ExportInput(segments, maxWidth, maxHeight);
+        return segments.Count == 0 ? null : new ExportInput(segments, maxWidth, maxHeight, skipped);
     }
 }
 

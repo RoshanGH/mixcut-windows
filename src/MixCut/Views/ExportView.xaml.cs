@@ -344,6 +344,7 @@ public partial class ExportView : UserControl, IProjectView
         var config = BuildConfig();
         var tasks = new List<(MixScheme Scheme, ExportInput Input, string OutputPath)>();
         var skipped = 0;
+        var segmentSkipped = 0;
         for (var i = 0; i < schemes.Count; i++)
         {
             var scheme = schemes[i];
@@ -353,6 +354,7 @@ public partial class ExportView : UserControl, IProjectView
                 skipped++;
                 continue;
             }
+            segmentSkipped += input.SkippedCount; // 方案内源文件丢失的分镜数，累计后告知用户
             // 命名：策略名_变体序号_方案名.mp4
             var strategyName = SanitizeFileName(scheme.Strategy?.Name ?? "未分组");
             var schemeName = SanitizeFileName(scheme.Name);
@@ -365,6 +367,12 @@ public partial class ExportView : UserControl, IProjectView
             MessageBox.Show("没有有效的方案可导出（视频文件可能丢失）",
                 "无法导出", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
+        }
+
+        if (segmentSkipped > 0)
+        {
+            Components.ToastService.Show(
+                $"有 {segmentSkipped} 个分镜的源文件已丢失，导出时已自动跳过", Components.ToastStyle.Warning);
         }
 
         // QW-4：导出前检查文件冲突。目录里已存在同名 .mp4（上次导出 / 别的项目）会被静默覆盖，
