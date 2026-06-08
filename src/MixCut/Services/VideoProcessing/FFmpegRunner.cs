@@ -188,7 +188,10 @@ public sealed class FFmpegRunner
             if (cancellationToken.IsCancellationRequested)
             {
                 _logger.LogInformation("FFmpeg 进程因取消被终止");
-                throw FFmpegException.Cancelled();
+                // 抛标准 OperationCanceledException（而非 FFmpegException.Cancelled）—— 取消必须用标准
+                // 取消异常类型，否则上层 catch(OperationCanceledException)（如 ExportService 取消分支）
+                // 接不住，会把「用户取消」误判为「硬件编码失败」触发不必要的 CPU 降级 / 误报导出失败。
+                throw new OperationCanceledException(cancellationToken);
             }
             _logger.LogError("FFmpeg 进程超时（{Minutes} 分钟），强制终止", timeout.TotalMinutes);
             throw FFmpegException.ExecutionFailed(-1, "进程超时");

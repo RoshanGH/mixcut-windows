@@ -6,7 +6,6 @@ public enum FFmpegErrorKind
     BinaryNotFound,
     ExecutionFailed,
     OutputParsingFailed,
-    Cancelled,
 }
 
 /// <summary>FFmpeg 执行异常，携带面向用户的中文提示。</summary>
@@ -31,7 +30,4 @@ public sealed class FFmpegException : Exception
 
     public static FFmpegException OutputParsingFailed(string detail) =>
         new(FFmpegErrorKind.OutputParsingFailed, $"视频分析结果异常: {detail}");
-
-    public static FFmpegException Cancelled() =>
-        new(FFmpegErrorKind.Cancelled, "操作已取消");
 }
