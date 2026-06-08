@@ -8,6 +8,7 @@ public enum AIProviderErrorKind
     InvalidResponse,
     RateLimited,
     JsonParsingFailed,
+    ClientError,
 }
 
 /// <summary>AI 提供商调用异常，携带面向用户的中文提示。</summary>
@@ -27,6 +28,12 @@ public sealed class AIProviderException : Exception
     public static AIProviderException RequestFailed(string detail) =>
         new(AIProviderErrorKind.RequestFailed,
             $"AI 服务连接失败，请检查网络后重试。（{detail}）");
+
+    /// <summary>4xx 客户端错误（模型名 / 接口地址 / 参数配置错），不可重试 —— 重试也是同样结果，
+    /// 应立即提示用户检查配置，而非误导成「网络问题」干等指数退避。</summary>
+    public static AIProviderException ClientError(int statusCode, string detail) =>
+        new(AIProviderErrorKind.ClientError,
+            $"AI 请求被拒绝（HTTP {statusCode}），请检查「设置」里的模型名称、接口地址是否正确。（{detail}）");
 
     public static AIProviderException InvalidResponse(string detail) =>
         new(AIProviderErrorKind.InvalidResponse,

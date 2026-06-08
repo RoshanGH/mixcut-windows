@@ -277,11 +277,18 @@ public sealed class OpenAICompatibleClient : IAiProvider
 
                 if (!response.IsSuccessStatusCode)
                 {
+                    var code = (int)response.StatusCode;
                     // QW-14：某些 API 网关的错误响应体会回显 Authorization header（含 Bearer token）。
                     // 写日志 / 抛给上层前先脱敏，避免密钥泄漏到日志文件或冒泡到用户可见的错误信息。
-                    _logger.LogError("HTTP {Code}: {Body}", (int)response.StatusCode, Redact(Truncate(data, 500)));
+                    _logger.LogError("HTTP {Code}: {Body}", code, Redact(Truncate(data, 500)));
+                    // 4xx（429 已在上面单独处理）是确定性客户端错误（模型名/接口地址/参数配置错），
+                    // 重试 3 次也是同样结果 → 立即抛不可重试异常，避免用户配错后干等 ~14s 指数退避。
+                    if (code is >= 400 and < 500)
+                    {
+                        throw AIProviderException.ClientError(code, Redact(Truncate(data, 200)));
+                    }
                     throw AIProviderException.RequestFailed(
-                        $"HTTP {(int)response.StatusCode}: {Redact(Truncate(data, 200))}");
+                        $"HTTP {code}: {Redact(Truncate(data, 200))}");
                 }
 
                 return isClaude ? ParseClaudeResponse(data) : ParseOpenAIResponse(data);
@@ -289,7 +296,7 @@ public sealed class OpenAICompatibleClient : IAiProvider
             catch (AIProviderException ex)
             {
                 lastError = ex;
-                if (ex.Kind == AIProviderErrorKind.ApiKeyNotConfigured)
+                if (ex.Kind is AIProviderErrorKind.ApiKeyNotConfigured or AIProviderErrorKind.ClientError)
                 {
                     throw;
                 }
