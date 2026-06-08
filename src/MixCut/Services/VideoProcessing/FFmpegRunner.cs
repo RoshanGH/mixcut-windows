@@ -114,7 +114,12 @@ public sealed class FFmpegRunner
                     System.Globalization.CultureInfo.InvariantCulture, out var d) && d > 0)
             {
                 await _durationCacheLock.WaitAsync(cancellationToken);
-                try { _durationCache[videoPath] = d; }
+                try
+                {
+                    // 防无界增长：单例长生命周期，缓存超上限就整体清空（时长 probe 很快，重建成本低）。
+                    if (_durationCache.Count >= 512) { _durationCache.Clear(); }
+                    _durationCache[videoPath] = d;
+                }
                 finally { _durationCacheLock.Release(); }
                 return d;
             }
