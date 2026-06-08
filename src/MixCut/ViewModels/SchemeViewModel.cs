@@ -689,16 +689,6 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
     private static bool SchemeContainsSegment(MixScheme scheme, Segment segment) =>
         scheme.SchemeSegments.Any(ss => ss.SegmentId == segment.Id);
 
-    /// <summary>按当前顺序重排 Position 字段为 1-N 连续。Insert/Remove 后必须调用。</summary>
-    private static void RenumberPositions(MixScheme scheme)
-    {
-        var ordered = scheme.OrderedSegments.ToList();
-        for (var i = 0; i < ordered.Count; i++)
-        {
-            ordered[i].Position = i + 1;
-        }
-    }
-
     // ---- v0.3.0：自定义方案创建（端到端：建占位 → AI 反推 → 刷新） ----
 
     /// <summary>

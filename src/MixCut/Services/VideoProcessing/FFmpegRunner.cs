@@ -219,7 +219,16 @@ public sealed class FFmpegRunner
         while ((line = await reader.ReadLineAsync()) is not null)
         {
             sb.Append(line).Append('\n');
-            handler?.Invoke(line);
+            // 纵深防御：进度回调（含 ParseProgress 解析、外部 handler）抛异常不应中断整个 stderr
+            // 读取任务，否则一行畸形进度会让 await stderrTask 重抛、把整个导出/分析误报为失败。
+            try
+            {
+                handler?.Invoke(line);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Debug(ex, "[FFmpeg] stderr handler 异常已忽略，不中断读取");
+            }
         }
         return sb.ToString();
     }
@@ -513,17 +522,23 @@ public sealed class FFmpegRunner
             return null;
         }
 
-        var hours = double.Parse(timeMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-        var minutes = double.Parse(timeMatch.Groups[2].Value, CultureInfo.InvariantCulture);
-        var seconds = double.Parse(timeMatch.Groups[3].Value, CultureInfo.InvariantCulture);
+        // 防御：用 TryParse 而非 Parse —— ffmpeg stderr 偶发畸形进度行（科学计数 / 超大值 / N/A）
+        // 不该抛 FormatException 拖垮整个 stderr 读取任务（见 ReadStderrAsync 的纵深防护）。时间解析
+        // 失败则跳过这一行（返回 null），frame/fps/speed 失败给 0。
+        if (!double.TryParse(timeMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours) ||
+            !double.TryParse(timeMatch.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var minutes) ||
+            !double.TryParse(timeMatch.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
+        {
+            return null;
+        }
         var currentTime = hours * 3600 + minutes * 60 + seconds;
 
         var frame = FrameRegex.Match(text) is { Success: true } fm
-            ? int.Parse(fm.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+            && int.TryParse(fm.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fv) ? fv : 0;
         var fps = FpsRegex.Match(text) is { Success: true } fpm
-            ? double.Parse(fpm.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+            && double.TryParse(fpm.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var fpv) ? fpv : 0;
         var speed = SpeedRegex.Match(text) is { Success: true } sm
-            ? double.Parse(sm.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+            && double.TryParse(sm.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var spv) ? spv : 0;
 
         var percentage = totalDuration is > 0
             ? Math.Min(currentTime / totalDuration.Value, 1.0)

@@ -547,26 +547,6 @@ public sealed class ASRService
                   + "\n临时文件保留在 " + Path.GetFileName(tempPath) + "，下次重试会自动续传");
     }
 
-    /// <summary>准备临时下载文件路径，清理旧的残留（被锁则换新名）。</summary>
-    private static string PrepareTempPath(string destPath)
-    {
-        var standard = destPath + ".download";
-        if (!File.Exists(standard))
-        {
-            return standard;
-        }
-        try
-        {
-            File.Delete(standard);
-            return standard;
-        }
-        catch (IOException)
-        {
-            // 旧 .download 被锁（前次下载进程未释放），换个唯一名。
-            return destPath + "." + Guid.NewGuid().ToString("N")[..8] + ".download";
-        }
-    }
-
     private void TryDelete(string path)
     {
         try
