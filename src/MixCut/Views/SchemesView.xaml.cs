@@ -18,6 +18,7 @@ public partial class SchemesView : UserControl, IProjectView
     private readonly SegmentLibraryViewModel? _segmentVm;
     private Project? _project;
     private readonly HashSet<Guid> _expandedStrategies = new();
+    private System.Threading.CancellationTokenSource? _generateCts;
 
     // Phase 4b 场景 B drawer 状态
     private System.Collections.ObjectModel.ObservableCollection<ViewModels.Cards.SegmentPickerItem>? _pickerItems;
@@ -106,6 +107,12 @@ public partial class SchemesView : UserControl, IProjectView
 
     // ---- 生成对话框 ----
 
+    private void OnCancelGenerate(object sender, RoutedEventArgs e)
+    {
+        _generateCts?.Cancel();
+        if (ProgressText is not null) { ProgressText.Text = "正在取消…"; }
+    }
+
     private async void OnOpenGenerateDialog(object sender, RoutedEventArgs e)
     {
         // async void 必须自己捕获所有异常 —— 否则会穿透到 SynchronizationContext 直接终止 WPF 进程。
@@ -121,7 +128,21 @@ public partial class SchemesView : UserControl, IProjectView
                 return;
             }
 
-            await _vm.GenerateSchemesAsync(_project, dialog.TargetVideoCount, dialog.CustomPrompt);
+            // P0-2：传入取消令牌，让生成进度 banner 上的「取消」按钮真正生效（后端已全透传 token，
+            // 此前 View 没传 → 取消回滚逻辑是死代码）。取消时 GenerateSchemesAsync 内部回滚不抛，
+            // 下面刷新照常。
+            _generateCts?.Dispose();
+            _generateCts = new System.Threading.CancellationTokenSource();
+            try
+            {
+                await _vm.GenerateSchemesAsync(
+                    _project, dialog.TargetVideoCount, dialog.CustomPrompt, _generateCts.Token);
+            }
+            finally
+            {
+                _generateCts.Dispose();
+                _generateCts = null;
+            }
 
             // 默认展开新生成的第一个策略。
             if (_vm.Strategies.Count > 0)

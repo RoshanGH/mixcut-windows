@@ -51,7 +51,18 @@
             <Border DockPanel.Dock="Top" x:Name="ProgressBanner" Background="#E7F0FF"
                     Padding="14,8" Visibility="Collapsed">
                 <StackPanel>
-                    <TextBlock x:Name="ProgressText" FontSize="11" Foreground="#1D6BE5" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="ProgressText" FontSize="11" Foreground="#1D6BE5"
+                                   VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" x:Name="CancelGenerateButton" Content="取消"
+                                Click="OnCancelGenerate" Margin="8,0,0,0" Padding="10,2"
+                                FontSize="10" Cursor="Hand" Background="White" Foreground="#1D6BE5"
+                                BorderBrush="#1D6BE5" BorderThickness="1" VerticalAlignment="Center" />
+                    </Grid>
                     <ProgressBar IsIndeterminate="True" Height="3" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
