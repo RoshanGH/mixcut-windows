@@ -134,8 +134,9 @@ public partial class InlineVideoPlayer : UserControl
             var posSec = Player.Position.TotalSeconds;
             if (posSec < startTime || posSec > endTime)
             {
-                // 区间变了且当前位置越界：用新区间重启帧泵
-                Player.Open(videoPath, startTime, endTime - startTime);
+                // 区间变了且当前位置越界：用新区间重启帧泵（沿用宿主框尺寸，避免回退成横帧）
+                var (tw, th) = FrameTargetPixels();
+                Player.Open(videoPath, startTime, endTime - startTime, tw, th);
             }
             ProgressSlider.Minimum = startTime;
             ProgressSlider.Maximum = endTime;
@@ -165,6 +166,23 @@ public partial class InlineVideoPlayer : UserControl
         }
     }
 
+    /// <summary>
+    /// 本宿主控件的物理像素尺寸，作为帧泵的解码目标框。宿主一直可见、尺寸确定，
+    /// 不像内部 Player 那样在 Collapsed→Visible 同步栈里读到 0。
+    /// 若宿主自身也尚未布局（ActualWidth=0，正常不会发生），返回 (0,0) 让帧泵走自身回退。
+    /// </summary>
+    private (int w, int h) FrameTargetPixels()
+    {
+        if (ActualWidth < 1 || ActualHeight < 1)
+        {
+            return (0, 0);
+        }
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        var w = (int)Math.Round(ActualWidth * dpi.DpiScaleX);
+        var h = (int)Math.Round(ActualHeight * dpi.DpiScaleY);
+        return (w, h);
+    }
+
     private void OnPlayClick(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_videoPath) || !File.Exists(_videoPath))
@@ -178,7 +196,11 @@ public partial class InlineVideoPlayer : UserControl
         PlayingState.Visibility = Visibility.Visible;
         var start = _segmentStart ?? 0;
         var dur = _segmentEnd is { } end ? end - start : 0; // 0 = 完整视频播到 EOF
-        Player.Open(_videoPath, start, dur);
+        // 根因修复（修「hover 播放小图/黑屏」）：解码目标尺寸用本宿主 UserControl 的尺寸传给帧泵。
+        // 宿主一直显示着缩略图、尺寸确定（ActualWidth 非 0）；而内部 Player 刚 Collapsed→Visible，
+        // 自身 ActualWidth=0 不可靠（UpdateLayout 也救不回，已实证）。传宿主尺寸 → 帧按卡片比例解码。
+        var (tw, th) = FrameTargetPixels();
+        Player.Open(_videoPath, start, dur, tw, th);
         StartTimer();
     }
 

@@ -36,6 +36,11 @@ public class FfmpegFramePlayer : Image
     private volatile bool _stop;
     private volatile bool _paused;
     private int _w, _h;
+    // 宿主给的目标解码尺寸（物理像素）。来自一直可见、尺寸确定的宿主控件（如 InlineVideoPlayer
+    // UserControl），而非本 Image —— 本 Image 在 PlayingState 刚 Collapsed→Visible 的同步栈里
+    // ActualWidth 恒为 0，UpdateLayout 也救不回（已实证）。0 表示未设，回退到本控件 ActualWidth。
+    // Seek 重启时不传尺寸即复用这里记忆的值。
+    private int _targetW, _targetH;
     private readonly int _fps = 30;
     private string? _path;
     private double _clipStart;     // 片段在源文件中的起点（秒）
@@ -71,8 +76,12 @@ public class FfmpegFramePlayer : Image
     /// <summary>
     /// 开始播放 <paramref name="path"/> 从 <paramref name="start"/> 起 <paramref name="dur"/> 秒
     /// （dur&lt;=0 播到 EOF）。若已在播会先 Stop。
+    /// <paramref name="targetW"/>/<paramref name="targetH"/> 为宿主控件的物理像素尺寸（解码目标框）。
+    /// 调用方应传宿主（如 InlineVideoPlayer UserControl）的尺寸 —— 它一直可见、尺寸确定；本 Image
+    /// 自身的 ActualWidth 在刚 Collapsed→Visible 时为 0 不可靠（小图/黑屏根因）。0=不更新，复用上次值，
+    /// 仍为 0 才回退本控件 ActualWidth。Seek 重启不传即复用记忆值。
     /// </summary>
-    public void Open(string path, double start, double dur)
+    public void Open(string path, double start, double dur, int targetW = 0, int targetH = 0)
     {
         Stop();
         if (string.IsNullOrEmpty(path) || !File.Exists(path) || !BundledBinaries.FfmpegAvailable)
@@ -81,10 +90,24 @@ public class FfmpegFramePlayer : Image
             return;
         }
 
-        // 目标像素尺寸：按控件实际尺寸 × DPI，取偶数，给合理下限/上限
+        if (targetW > 0 && targetH > 0)
+        {
+            _targetW = targetW;
+            _targetH = targetH;
+        }
+
+        // 目标像素尺寸：优先用宿主给的尺寸（一直可见、可靠）；都没有才退回本控件实际尺寸 + 下限。
+        // 解码成宿主框尺寸 → 帧比例≈卡片比例：竖框竖视频几乎无黑边、满帧；横视频上下黑边由
+        // Uniform 正常处理。彻底摆脱「本 Image ActualWidth=0 → fallback 240×134 横帧」的旧路径。
         var dpi = VisualTreeHelper.GetDpi(this);
-        _w = ClampEven((int)Math.Round(Math.Max(ActualWidth, 160) * dpi.DpiScaleX), 16, 1280);
-        _h = ClampEven((int)Math.Round(Math.Max(ActualHeight, 90) * dpi.DpiScaleY), 16, 1280);
+        var srcW = _targetW > 0 ? _targetW : (int)Math.Round(Math.Max(ActualWidth, 160) * dpi.DpiScaleX);
+        var srcH = _targetH > 0 ? _targetH : (int)Math.Round(Math.Max(ActualHeight, 90) * dpi.DpiScaleY);
+        _w = ClampEven(srcW, 16, 1280);
+        _h = ClampEven(srcH, 16, 1280);
+        // 自验证 tag：frame 应≈宿主框比例（如竖框 ~228x405）。若仍是 240×134 横向说明 target 没传进来。
+        Serilog.Log.Information(
+            "[InlinePlayDiag] Open frame={W}x{H} target={TW}x{TH} actual={AW:0}x{AH:0} file={File}",
+            _w, _h, _targetW, _targetH, ActualWidth, ActualHeight, Path.GetFileName(path));
         _path = path;
         _clipStart = start;
         _clipEndAbs = dur > 0 ? start + dur : 0;
