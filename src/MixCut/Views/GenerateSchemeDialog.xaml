@@ -14,7 +14,7 @@
                    Margin="0,4,0,18" />
 
         <!-- 素材概览 -->
-        <Border Background="#F5F5F7" CornerRadius="10" Padding="14,12" Margin="0,0,0,18">
+        <Border Background="{StaticResource BgSecondaryBrush}" CornerRadius="10" Padding="14,12" Margin="0,0,0,18">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -26,21 +26,21 @@
                 <StackPanel Grid.Column="0" HorizontalAlignment="Center">
                     <TextBlock x:Name="VideoCountText" FontSize="18" FontWeight="SemiBold"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="视频" FontSize="10" Foreground="#999"
+                    <TextBlock Text="视频" FontSize="10" Foreground="{StaticResource TextQuaternaryBrush}"
                                HorizontalAlignment="Center" />
                 </StackPanel>
                 <Border Grid.Column="1" Width="1" Background="#DDD" />
                 <StackPanel Grid.Column="2" HorizontalAlignment="Center">
                     <TextBlock x:Name="SegmentCountText" FontSize="18" FontWeight="SemiBold"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="分镜" FontSize="10" Foreground="#999"
+                    <TextBlock Text="分镜" FontSize="10" Foreground="{StaticResource TextQuaternaryBrush}"
                                HorizontalAlignment="Center" />
                 </StackPanel>
                 <Border Grid.Column="3" Width="1" Background="#DDD" />
                 <StackPanel Grid.Column="4" HorizontalAlignment="Center">
                     <TextBlock x:Name="DurationText" FontSize="18" FontWeight="SemiBold"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="总时长" FontSize="10" Foreground="#999"
+                    <TextBlock Text="总时长" FontSize="10" Foreground="{StaticResource TextQuaternaryBrush}"
                                HorizontalAlignment="Center" />
                 </StackPanel>
             </Grid>
@@ -55,7 +55,7 @@
         <Slider x:Name="CountSlider" Minimum="10" Maximum="100" Value="50"
                 TickFrequency="10" IsSnapToTickEnabled="True"
                 ValueChanged="OnSliderChanged" Margin="0,4,0,4" />
-        <TextBlock x:Name="EstimateText" FontSize="11" Foreground="#999" Margin="0,2,0,18" />
+        <TextBlock x:Name="EstimateText" FontSize="11" Foreground="{StaticResource TextQuaternaryBrush}" Margin="0,2,0,18" />
 
         <!-- 自定义要求 -->
         <TextBlock Text="自定义需求（可选）" FontSize="13" Margin="0,0,0,4" />
@@ -66,7 +66,7 @@
                      TextChanged="OnCustomPromptChanged" />
             <TextBlock x:Name="CustomPromptPlaceholder"
                        Text="如：偏重促销风格、时长控制在 30 秒内、避免低质量画面..."
-                       Foreground="#BBB" FontSize="12"
+                       Foreground="{StaticResource TextQuinaryBrush}" FontSize="12"
                        Margin="9,7,0,0" IsHitTestVisible="False"
                        VerticalAlignment="Top" HorizontalAlignment="Left" />
         </Grid>

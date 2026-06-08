@@ -6,9 +6,9 @@
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         Background="White">
     <StackPanel Margin="24">
-        <TextBlock Text="重命名项目" FontSize="15" FontWeight="SemiBold"
+        <TextBlock Text="重命名项目" FontSize="16" FontWeight="SemiBold"
                    HorizontalAlignment="Center" Margin="0,0,0,16" />
-        <TextBlock Text="新名称" FontSize="12" Foreground="#666" Margin="0,0,0,4" />
+        <TextBlock Text="新名称" FontSize="12" Foreground="{StaticResource TextTertiaryBrush}" Margin="0,0,0,4" />
         <TextBox x:Name="NameBox" Padding="6,5" FontSize="13" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
             <Button Content="取消" Padding="18,7" Margin="0,0,10,0" IsCancel="True"

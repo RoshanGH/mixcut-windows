@@ -9,16 +9,16 @@
     <StackPanel Margin="28">
         <!-- 标题区（对齐 macOS NewProjectSheet：film.stack.fill 图标 + "新建项目" 标题） -->
         <TextBlock Text="🎬" FontSize="24" HorizontalAlignment="Center"
-                   Foreground="#1D6BE5" Margin="0,0,0,4" />
+                   Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,4" />
         <TextBlock Text="新建项目" FontSize="16" FontWeight="SemiBold"
                    HorizontalAlignment="Center" Margin="0,0,0,20" />
-        <TextBlock Text="项目名称" FontSize="12" Foreground="#666" Margin="0,0,0,6" />
+        <TextBlock Text="项目名称" FontSize="12" Foreground="{StaticResource TextTertiaryBrush}" Margin="0,0,0,6" />
         <Grid>
             <TextBox x:Name="NameBox" Padding="6,5" FontSize="13"
                      TextChanged="OnNameChanged" />
             <!-- 灰色 placeholder（WPF TextBox 无原生 placeholder，用 TextBlock 叠加 + 监听文本可见性切换） -->
             <TextBlock x:Name="NamePlaceholder" Text="输入项目名称（例如：康王视频混剪）"
-                       Foreground="#BBB" FontSize="13"
+                       Foreground="{StaticResource TextQuinaryBrush}" FontSize="13"
                        Margin="9,7,0,0" IsHitTestVisible="False"
                        VerticalAlignment="Top" HorizontalAlignment="Left" />
         </Grid>
