@@ -211,7 +211,8 @@ public partial class ImportViewModel : ObservableObject
             foreach (var path in paths)
             {
                 var name = Path.GetFileName(path);
-                var hash = ComputeFileHash(path);
+                // hash 读 head+tail 各 4MB + SHA256，放线程池避免阻塞 UI（§5 UI 永不卡顿）。
+                var hash = await Task.Run(() => ComputeFileHash(path));
                 if (existingNames.Contains(name) || (hash != null && existingHashes.Contains(hash)))
                 {
                     skipped.Add(name);
@@ -323,7 +324,8 @@ public partial class ImportViewModel : ObservableObject
     private async Task<(Guid VideoId, bool NeedsAnalysis)> ImportOrLinkVideoAsync(string path, Guid projectId)
     {
         Phase = ImportPhase.Copying;
-        var hash = ComputeFileHash(path);
+        // hash 计算放线程池，避免在 UI 线程同步读 8MB 阻塞界面（§5）。
+        var hash = await Task.Run(() => ComputeFileHash(path));
 
         await using var db = await _dbFactory.CreateDbContextAsync();
 
