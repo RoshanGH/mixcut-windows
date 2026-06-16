@@ -10,11 +10,44 @@
              mc:Ignorable="d"
              Background="{StaticResource BgPrimaryBrush}">
     <UserControl.Resources>
-        <sys:Double x:Key="SegmentCardWidth">210</sys:Double>
-        <sys:Double x:Key="SegmentCardHeight">500</sys:Double>
-        <!-- 9:16 手机端竖屏比例（信息流广告投放规格），152×270 -->
-        <sys:Double x:Key="SegmentCardThumbWidth">152</sys:Double>
-        <sys:Double x:Key="SegmentCardThumbHeight">270</sys:Double>
+        <sys:Double x:Key="SegmentCardWidth">228</sys:Double>
+        <sys:Double x:Key="SegmentCardHeight">650</sys:Double>
+        <!-- 卡片内满宽 9:16，避免视频缩在大面积空白中。 -->
+        <sys:Double x:Key="SegmentCardThumbWidth">210</sys:Double>
+        <sys:Double x:Key="SegmentCardThumbHeight">373</sys:Double>
+
+        <Style x:Key="FrameStepButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBlueBrush}" />
+            <Setter Property="Background" Value="{StaticResource AccentBlueLightBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}"
+                                CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background"
+                                        Value="{StaticResource AccentBlueHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background"
+                                        Value="{StaticResource AccentBlueAlpha20Brush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <DockPanel Margin="20,16,16,16">
@@ -328,7 +361,7 @@
                                         Background="Black"
                                         CornerRadius="6" ClipToBounds="True">
                                     <Grid x:Name="ThumbGrid">
-                                        <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
+                                        <Image Source="{Binding PreviewImage}" Stretch="UniformToFill" />
                                         <!-- 注入的 InlineVideoPlayer 必须撑满 152x270 框：ContentControl 默认内容对齐 Left/Top
                                              会让 player 缩到内容尺寸（hover 播放不铺满的结构性根因），显式 Stretch 撑满。 -->
                                         <ContentControl x:Name="VideoHost"
@@ -356,11 +389,14 @@
                                             </TextBlock>
                                         </Border>
 
-                                        <!-- 时长 badge（右下，走 binding 自动联动） -->
-                                        <Border Background="#A0000000" CornerRadius="4"
+                                        <!-- 时长 badge（右下，走 binding 自动联动）。hover 播放时隐藏，
+                                             避免挡住播放控制栏右侧的总时长数字（OnCardMouseEnter/Leave 切换）。 -->
+                                        <Border x:Name="CardDurationBadge"
+                                                Background="#A0000000" CornerRadius="4"
                                                 Padding="6,1"
                                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                                Margin="0,0,6,6">
+                                                Margin="0,0,6,6"
+                                                ToolTip="{Binding TimeRangeDisplay}">
                                             <TextBlock Text="{Binding DurationDisplay}"
                                                        Foreground="White" FontSize="10"
                                                        FontWeight="SemiBold" />
@@ -388,6 +424,27 @@
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                                        Visibility="{Binding IsChecked, Converter={StaticResource BoolToVisibility}}" />
                                         </Border>
+
+                                        <!-- 全局点击播放：整张缩略图都是点击区（点哪都能播，不用瞄准小 ▶），
+                                             居中显示 ▶ 提示。播放时由 OnSegmentPlayClick 隐藏、播完/停止由 Idle 还原。
+                                             多选模式隐藏，让点击落到卡片做选择。自定义模板=纯透明背景，避免默认按钮 chrome。 -->
+                                        <Button x:Name="PlayOverlay" Click="OnSegmentPlayClick" Tag="{Binding}"
+                                                Cursor="Hand"
+                                                Visibility="{Binding IsSelectionMode, Converter={StaticResource InverseBoolToVisibility}}">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="#01000000">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center" />
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                            <Border Background="#90000000" CornerRadius="999" Width="46" Height="46">
+                                                <TextBlock Text="▶" Foreground="White" FontSize="16"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Margin="3,0,0,0" />
+                                            </Border>
+                                        </Button>
                                     </Grid>
                                 </Border>
 
@@ -470,74 +527,110 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- 边界微调（Grid.Row=4 锁定在卡片底部，台词再长也不会挤掉） -->
-                                <Grid Grid.Row="4" Height="24" Margin="0,4,0,0">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button Content="−"
-                                                Background="{StaticResource BgQuaternaryBrush}"
-                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                                BorderThickness="0"
-                                                Width="18" Height="18" Padding="0" FontSize="10"
-                                                Cursor="Hand"
-                                                Command="{Binding AdjustStartCommand}"
-                                                CommandParameter="-0.1" />
-                                        <TextBox Width="36" Height="18" FontSize="9"
-                                                 FontFamily="{StaticResource FontFamilyMono}"
-                                                 TextAlignment="Center"
-                                                 VerticalContentAlignment="Center"
-                                                 BorderThickness="0" Background="Transparent"
-                                                 Margin="2,0,2,0"
-                                                 Text="{Binding StartTime, Mode=OneWay, StringFormat={}{0:F1}}"
-                                                 LostKeyboardFocus="OnStartLostFocus"
-                                                 KeyDown="OnStartKeyDown"
-                                                 Tag="{Binding}" />
-                                        <Button Content="+"
-                                                Background="{StaticResource BgQuaternaryBrush}"
-                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                                BorderThickness="0"
-                                                Width="18" Height="18" Padding="0" FontSize="10"
-                                                Cursor="Hand"
-                                                Command="{Binding AdjustStartCommand}"
-                                                CommandParameter="0.1" />
-                                        <TextBlock Text="–" FontSize="10"
-                                                   Foreground="{StaticResource TextDisabledBrush}"
-                                                   VerticalAlignment="Center" Margin="3,0" />
-                                        <Button Content="−"
-                                                Background="{StaticResource BgQuaternaryBrush}"
-                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                                BorderThickness="0"
-                                                Width="18" Height="18" Padding="0" FontSize="10"
-                                                Cursor="Hand"
-                                                Command="{Binding AdjustEndCommand}"
-                                                CommandParameter="-0.1" />
-                                        <TextBox Width="36" Height="18" FontSize="9"
-                                                 FontFamily="{StaticResource FontFamilyMono}"
-                                                 TextAlignment="Center"
-                                                 VerticalContentAlignment="Center"
-                                                 BorderThickness="0" Background="Transparent"
-                                                 Margin="2,0,2,0"
-                                                 Text="{Binding EndTime, Mode=OneWay, StringFormat={}{0:F1}}"
-                                                 LostKeyboardFocus="OnEndLostFocus"
-                                                 KeyDown="OnEndKeyDown"
-                                                 Tag="{Binding}" />
-                                        <Button Content="+"
-                                                Background="{StaticResource BgQuaternaryBrush}"
-                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                                BorderThickness="0"
-                                                Width="18" Height="18" Padding="0" FontSize="10"
-                                                Cursor="Hand"
-                                                Command="{Binding AdjustEndCommand}"
-                                                CommandParameter="0.1" />
-                                        <Button x:Name="QuickEditBtn" Content="⋯"
-                                                Background="{StaticResource BgQuaternaryBrush}"
-                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                                BorderThickness="0"
-                                                Width="22" Height="18" Padding="0" FontSize="10"
-                                                Margin="6,0,0,0" Cursor="Hand"
-                                                Tag="{Binding}"
-                                                Click="OnQuickEditClick" />
+                                <!-- 商用级帧边界面板：时间码清楚、按钮可点、最后一帧可核对。 -->
+                                <Border Grid.Row="4" Margin="0,8,0,0" Padding="8"
+                                        Background="{StaticResource BgSubtleBrush}"
+                                        BorderBrush="{StaticResource BorderSubtleBrush}"
+                                        BorderThickness="1" CornerRadius="8">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,6">
+                                            <TextBlock Text="帧边界" FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock HorizontalAlignment="Right"
+                                                       Text="{Binding FrameRateDisplay}"
+                                                       FontSize="9"
+                                                       Foreground="{StaticResource TextQuaternaryBrush}" />
+                                        </Grid>
+
+                                        <Grid Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="28" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="IN" FontSize="9" FontWeight="Bold"
+                                                       Foreground="{StaticResource AccentBlueBrush}"
+                                                       VerticalAlignment="Center" />
+                                            <Button Grid.Column="1" Content="−"
+                                                    Style="{StaticResource FrameStepButtonStyle}"
+                                                    ToolTip="起点向前一帧"
+                                                    Command="{Binding AdjustStartCommand}"
+                                                    CommandParameter="-1" />
+                                            <Border Grid.Column="2" Height="28" Margin="5,0"
+                                                    Background="White"
+                                                    BorderBrush="{StaticResource BorderPrimaryBrush}"
+                                                    BorderThickness="1" CornerRadius="6">
+                                                <TextBlock Text="{Binding StartTimecode}"
+                                                           FontFamily="{StaticResource FontFamilyMono}"
+                                                           FontSize="10" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
+                                            <Button Grid.Column="3" Content="+"
+                                                    Style="{StaticResource FrameStepButtonStyle}"
+                                                    ToolTip="起点向后一帧"
+                                                    Command="{Binding AdjustStartCommand}"
+                                                    CommandParameter="1" />
+                                        </Grid>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="28" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="OUT" FontSize="9" FontWeight="Bold"
+                                                       Foreground="{StaticResource AccentBlueBrush}"
+                                                       VerticalAlignment="Center" />
+                                            <Button Grid.Column="1" Content="−"
+                                                    Style="{StaticResource FrameStepButtonStyle}"
+                                                    ToolTip="终点向前一帧"
+                                                    Command="{Binding AdjustEndCommand}"
+                                                    CommandParameter="-1" />
+                                            <Border Grid.Column="2" Height="28" Margin="5,0"
+                                                    Background="White"
+                                                    BorderBrush="{StaticResource BorderPrimaryBrush}"
+                                                    BorderThickness="1" CornerRadius="6">
+                                                <TextBlock Text="{Binding EndTimecode}"
+                                                           FontFamily="{StaticResource FontFamilyMono}"
+                                                           FontSize="10" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           ToolTip="结束边界不包含；实际最后画面见下方" />
+                                            </Border>
+                                            <Button Grid.Column="3" Content="+"
+                                                    Style="{StaticResource FrameStepButtonStyle}"
+                                                    ToolTip="终点向后一帧"
+                                                    Command="{Binding AdjustEndCommand}"
+                                                    CommandParameter="1" />
+                                        </Grid>
+
+                                        <Grid Margin="0,7,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock FontSize="9"
+                                                       Foreground="{StaticResource TextTertiaryBrush}">
+                                                <Run Text="停在最后一帧  " />
+                                                <Run Text="{Binding LastFrameTimecode, Mode=OneWay}"
+                                                     FontFamily="{StaticResource FontFamilyMono}"
+                                                     FontWeight="SemiBold" />
+                                            </TextBlock>
+                                            <Button x:Name="QuickEditBtn" Grid.Column="1"
+                                                    HorizontalAlignment="Right"
+                                                    Content="更多"
+                                                    Style="{StaticResource GhostButtonStyle}"
+                                                    Padding="6,1" FontSize="9"
+                                                    Tag="{Binding}"
+                                                    Click="OnQuickEditClick" />
+                                        </Grid>
                                     </StackPanel>
-                                </Grid>
+                                </Border>
                             </Grid>
                         </Border>
                                         </DataTemplate>

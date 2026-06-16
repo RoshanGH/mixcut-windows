@@ -569,7 +569,8 @@ public partial class SchemesView : UserControl, IProjectView
                                     Components.ToastService.Show("恢复失败，请重试", Components.ToastStyle.Error);
                                 }
                             }));
-                    Components.ToastService.Show("已删除策略 · Ctrl+Z 撤销", Components.ToastStyle.Warning);
+                    Components.ToastService.Show("已删除策略", Components.ToastStyle.Warning,
+                        "撤销", () => Infrastructure.UndoStack.UndoManager.Shared.Undo());
                 }
             };
         }
@@ -693,7 +694,8 @@ public partial class SchemesView : UserControl, IProjectView
                             }
                         }));
             }
-            Components.ToastService.Show($"已删除变体「{scheme.Name}」 · Ctrl+Z 撤销", Components.ToastStyle.Warning);
+            Components.ToastService.Show($"已删除变体「{scheme.Name}」", Components.ToastStyle.Warning,
+                "撤销", () => Infrastructure.UndoStack.UndoManager.Shared.Undo());
         };
         menu.Items.Add(deleteItem);
         return menu;
@@ -1026,7 +1028,7 @@ public partial class SchemesView : UserControl, IProjectView
     /// <summary>横向 Storyboard 卡片：缩略图 + 序号 + 类型 + 台词 + 右键移除。对齐 Mac 版 StoryboardCard。</summary>
     private UIElement BuildStoryboardCard(int position, SchemeSegment schemeSeg)
     {
-        const double cardWidth = 156;
+        const double cardWidth = 196;
         var seg = schemeSeg.Segment;
 
         var border = new Border
@@ -1083,7 +1085,7 @@ public partial class SchemesView : UserControl, IProjectView
         if (seg.Video is { LocalPath: var path } && File.Exists(path))
         {
             var player = new Components.InlineVideoPlayer();
-            player.SetSegment(path, seg.ThumbnailPath, seg.StartTime, seg.EndTime);
+            player.SetSegment(path, seg.ThumbnailPath, seg.StartFrame, seg.EndFrame, seg.EffectiveFps);
             thumbGrid.Children.Add(player);
         }
         else if (LoadThumbStatic(seg.ThumbnailPath) is { } img)
@@ -1153,13 +1155,14 @@ public partial class SchemesView : UserControl, IProjectView
             ToolTip = seg.Text,
         });
 
-        // 时长 + 时间区间
+        // 时长；具体 IN/OUT 时间码放在下方帧边界面板，避免一行塞满信息。
         info.Children.Add(new TextBlock
         {
-            Text = $"⏱ {seg.Duration.ToString("F1", CultureInfo.InvariantCulture)}s · " +
-                   $"{seg.StartTime.ToString("F1", CultureInfo.InvariantCulture)}-" +
-                   $"{seg.EndTime.ToString("F1", CultureInfo.InvariantCulture)}s",
-            FontSize = 9, Foreground = Brushes.Gray, Margin = new Thickness(0, 6, 0, 0),
+            Text = $"{seg.Duration.ToString("F1", CultureInfo.InvariantCulture)} 秒",
+            FontSize = 10, FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x4A)),
+            Margin = new Thickness(0, 7, 0, 0),
+            ToolTip = $"实际最后一帧：{seg.LastFrameTimecode}",
         });
 
         // 紧凑时间调整行（IN ± / OUT ±）—— 对齐 Mac StoryboardTimeRow。
@@ -1244,65 +1247,115 @@ public partial class SchemesView : UserControl, IProjectView
     }
 
     /// <summary>
-    /// Storyboard 卡片内的紧凑时间调整行（±0.1s）。对齐 Mac StoryboardTimeRow。
+    /// Storyboard 卡片内的逐帧时间调整行。每次点击只移动一帧。
     /// </summary>
     private UIElement BuildMiniTimeRow(Segment seg)
     {
-        var row = new StackPanel
+        var panel = new StackPanel();
+        var container = new Border
         {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 6, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 7, 0, 0),
+            Padding = new Thickness(7),
+            Background = new SolidColorBrush(Color.FromRgb(0xF5, 0xF7, 0xFA)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xE1, 0xE5, 0xEB)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(7),
+            Child = panel,
         };
 
         Button MiniBtn(string content)
         {
             return new Button
             {
-                Content = content, Width = 16, Height = 16, Padding = new Thickness(0),
-                FontSize = 8, FontWeight = FontWeights.Bold,
-                Background = new SolidColorBrush(Color.FromArgb(0x10, 0, 0, 0)),
-                BorderThickness = new Thickness(0), Foreground = Brushes.Gray,
+                Content = content, Width = 26, Height = 26, Padding = new Thickness(0),
+                FontSize = 13, FontWeight = FontWeights.SemiBold,
+                Background = new SolidColorBrush(Color.FromRgb(0xE7, 0xF0, 0xFF)),
+                BorderThickness = new Thickness(0),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x1D, 0x6B, 0xE5)),
                 Cursor = System.Windows.Input.Cursors.Hand,
             };
         }
-        TextBlock TimeText(double sec) => new()
+
+        UIElement FrameRow(
+            string label, string timecode, string minusTip, string plusTip,
+            Action minusAction, Action plusAction)
         {
-            Text = sec.ToString("F1", CultureInfo.InvariantCulture),
-            FontSize = 9, Foreground = Brushes.Gray,
-            FontFamily = new System.Windows.Media.FontFamily("Consolas, monospace"),
-            Width = 28, TextAlignment = TextAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition());
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
 
-        var inMinus = MiniBtn("−");
-        inMinus.Click += (_, _) => { _segmentVm!.AdjustStartTime(seg, -0.1); RefreshDetail(); };
-        var inText = TimeText(seg.StartTime);
-        var inPlus = MiniBtn("＋");
-        inPlus.Click += (_, _) => { _segmentVm!.AdjustStartTime(seg, 0.1); RefreshDetail(); };
+            grid.Children.Add(new TextBlock
+            {
+                Text = label, FontSize = 9, FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x1D, 0x6B, 0xE5)),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
 
-        var sep = new TextBlock
+            var minus = MiniBtn("−");
+            minus.ToolTip = minusTip;
+            minus.Click += (_, _) => minusAction();
+            Grid.SetColumn(minus, 1);
+            grid.Children.Add(minus);
+
+            var timeBorder = new Border
+            {
+                Height = 26, Margin = new Thickness(5, 0, 5, 0),
+                Background = Brushes.White,
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0xD8, 0xDC, 0xE3)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Child = new TextBlock
+                {
+                    Text = timecode, FontSize = 10, FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x1F, 0x1F, 0x23)),
+                    FontFamily = new System.Windows.Media.FontFamily("Consolas, monospace"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            Grid.SetColumn(timeBorder, 2);
+            grid.Children.Add(timeBorder);
+
+            var plus = MiniBtn("+");
+            plus.ToolTip = plusTip;
+            plus.Click += (_, _) => plusAction();
+            Grid.SetColumn(plus, 3);
+            grid.Children.Add(plus);
+            return grid;
+        }
+
+        panel.Children.Add(new TextBlock
         {
-            Text = "–", FontSize = 8, Foreground = Brushes.LightGray,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(2, 0, 2, 0),
-        };
+            Text = $"帧边界 · {seg.EffectiveFps:0.###} fps",
+            FontSize = 10, FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x4A)),
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+        panel.Children.Add(FrameRow(
+            "IN", seg.StartTimecode, "起点向前一帧", "起点向后一帧",
+            () => { _segmentVm!.AdjustStartFrame(seg, -1); RefreshDetail(); },
+            () => { _segmentVm!.AdjustStartFrame(seg, 1); RefreshDetail(); }));
 
-        var outMinus = MiniBtn("−");
-        outMinus.Click += (_, _) => { _segmentVm!.AdjustEndTime(seg, -0.1); RefreshDetail(); };
-        var outText = TimeText(seg.EndTime);
-        var outPlus = MiniBtn("＋");
-        outPlus.Click += (_, _) => { _segmentVm!.AdjustEndTime(seg, 0.1); RefreshDetail(); };
+        var outRow = FrameRow(
+            "OUT", seg.EndTimecode, "终点向前一帧", "终点向后一帧",
+            () => { _segmentVm!.AdjustEndFrame(seg, -1); RefreshDetail(); },
+            () => { _segmentVm!.AdjustEndFrame(seg, 1); RefreshDetail(); });
+        if (outRow is FrameworkElement outElement)
+        {
+            outElement.Margin = new Thickness(0, 5, 0, 0);
+        }
+        panel.Children.Add(outRow);
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"播放停在 {seg.LastFrameTimecode}",
+            FontSize = 9,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x7A, 0x7A, 0x80)),
+            Margin = new Thickness(28, 6, 0, 0),
+        });
 
-        row.Children.Add(inMinus);
-        row.Children.Add(inText);
-        row.Children.Add(inPlus);
-        row.Children.Add(sep);
-        row.Children.Add(outMinus);
-        row.Children.Add(outText);
-        row.Children.Add(outPlus);
-
-        return row;
+        return container;
     }
 
     // ---- Phase 4b：分镜选择抽屉控制 ----

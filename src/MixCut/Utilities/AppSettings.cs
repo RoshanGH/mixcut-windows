@@ -309,6 +309,13 @@ public sealed class AppSettings
         set => Set("did_regenerate_segment_thumbnails_to_first_frame_v1", value ? "true" : null);
     }
 
+    /// <summary>是否已把旧分镜的「秒」边界回填为帧号（issue #7 帧精确重构对齐迁移）。</summary>
+    public bool DidBackfillSegmentFramesV1
+    {
+        get => string.Equals(Get("did_backfill_segment_frames_v1"), "true", StringComparison.OrdinalIgnoreCase);
+        set => Set("did_backfill_segment_frames_v1", value ? "true" : null);
+    }
+
     /// <summary>用户已点 ✕ 屏蔽提示的新版本号（如 "0.6.0"）。下次启动若远端版本相同则不再 banner。</summary>
     public string? DismissedUpdateVersion
     {

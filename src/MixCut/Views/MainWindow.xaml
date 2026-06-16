@@ -86,7 +86,7 @@
                                                   ShadowDepth="2" Direction="270" />
                             </Border.Effect>
                             <StackPanel Width="200">
-                                <TextBlock Text="添加我的微信" FontSize="13" FontWeight="SemiBold"
+                                <TextBlock Text="添加我的微信加入交流群" FontSize="13" FontWeight="SemiBold"
                                            Foreground="#1F1F23" Margin="0,0,0,12" />
                                 <TextBlock Text="微信号" FontSize="11" Foreground="#999" Margin="0,0,0,2" />
                                 <TextBox x:Name="WeChatIdBox" Text="13462890087" IsReadOnly="True"
@@ -108,14 +108,8 @@
                         <ListBox x:Name="ProjectList" BorderThickness="0" Background="Transparent"
                                  SelectionChanged="OnProjectSelected"
                                  MouseDoubleClick="OnProjectDoubleClick"
+                                 ItemContainerStyle="{StaticResource SidebarListBoxItemStyle}"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="Padding" Value="6,5" />
-                                    <Setter Property="Margin" Value="0,1" />
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                </Style>
-                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid>
@@ -155,10 +149,11 @@
                         <TextBlock Text="工作区" FontSize="10" FontWeight="SemiBold"
                                    Foreground="#999" Margin="8,16,8,4" />
                         <ListBox x:Name="NavList" BorderThickness="0" Background="Transparent"
+                                 ItemContainerStyle="{StaticResource SidebarListBoxItemStyle}"
                                  SelectionChanged="OnNavSelected">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding}" Padding="4,5" />
+                                    <TextBlock Text="{Binding}" />
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
@@ -170,8 +165,12 @@
         <!-- 内容区 -->
         <ContentControl Grid.Column="1" x:Name="ContentArea" />
 
-        <!-- Toast 浮层（跨整个窗口，z 序最高，IsHitTest=False 不拦截点击） -->
-        <Grid Grid.ColumnSpan="2" x:Name="ToastHost" IsHitTestVisible="False" />
+        <!-- Toast 浮层（跨整个窗口，z 序最高）。
+             Grid 无 Background（默认 null）→ 空白区域不参与命中测试，点击照常穿透到下层 UI；
+             带可点按钮的 toast（如删除后的「撤销」）自身 IsHitTestVisible=true 才能被点到，
+             故这里必须为 True（之前误设 False 会连撤销按钮一起点不到）。
+             纯提示 toast 的 Border 自身设 IsHitTestVisible=false，依旧穿透不挡点击。 -->
+        <Grid Grid.ColumnSpan="2" x:Name="ToastHost" IsHitTestVisible="True" />
     </Grid>
     </DockPanel>
 </Window>

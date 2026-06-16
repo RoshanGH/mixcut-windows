@@ -9,6 +9,7 @@ public enum AIProviderErrorKind
     RateLimited,
     JsonParsingFailed,
     ClientError,
+    InsufficientBalance,
 }
 
 /// <summary>AI 提供商调用异常，携带面向用户的中文提示。</summary>
@@ -34,6 +35,13 @@ public sealed class AIProviderException : Exception
     public static AIProviderException ClientError(int statusCode, string detail) =>
         new(AIProviderErrorKind.ClientError,
             $"AI 请求被拒绝（HTTP {statusCode}），请检查「设置」里的模型名称、接口地址是否正确。（{detail}）");
+
+    /// <summary>HTTP 402 Payment Required —— AI 服务商账户余额不足（如 DeepSeek「Insufficient Balance」）。
+    /// 协议含义就是「需要付费」，绝不能归类成「网络问题」误导用户去查 WiFi / 切 VPN / 重启路由器，
+    /// 真正的下一步是去服务商后台充值。不可重试。</summary>
+    public static AIProviderException InsufficientBalance() =>
+        new(AIProviderErrorKind.InsufficientBalance,
+            "AI 服务账户余额不足，请前往你的 AI 服务商（如 DeepSeek / OpenAI）后台充值后重试。");
 
     public static AIProviderException InvalidResponse(string detail) =>
         new(AIProviderErrorKind.InvalidResponse,

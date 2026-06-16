@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MixCut.Data;
 using MixCut.Models;
+using MixCut.Utilities;
 
 namespace MixCut.ViewModels;
 
@@ -573,93 +574,135 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
 
     // ---- 边界微调 ----
 
-    /// <summary>调整开始时间（步进），调整后播放新开始处 2 秒。</summary>
+    /// <summary>兼容旧调用：把秒步长换算为帧步长。</summary>
     public void AdjustStartTime(Segment segment, double step)
     {
-        var newStart = Math.Max(0, segment.StartTime + step);
-        if (newStart >= segment.EndTime - 0.2)
-        {
-            return;
-        }
-        if (!ApplyTimeEdit(segment, newStart, segment.EndTime))
-        {
-            return;
-        }
-        RequestPlay(segment, newStart, Math.Min(newStart + 2, segment.EndTime));
+        var fps = EffectiveEditFps(segment);
+        var delta = fps > 0 ? Math.Sign(step) * Math.Max(1, Math.Abs(FrameTime.SecondsToFrame(step, fps))) : 0;
+        if (delta != 0) AdjustStartFrame(segment, delta);
     }
 
-    /// <summary>调整结束时间（步进），调整后播放结束前 1 秒。</summary>
+    /// <summary>兼容旧调用：把秒步长换算为帧步长。</summary>
     public void AdjustEndTime(Segment segment, double step)
     {
-        var videoDuration = segment.Video?.Duration ?? double.MaxValue;
-        var newEnd = Math.Min(videoDuration, segment.EndTime + step);
-        if (newEnd <= segment.StartTime + 0.2)
+        var fps = EffectiveEditFps(segment);
+        var delta = fps > 0 ? Math.Sign(step) * Math.Max(1, Math.Abs(FrameTime.SecondsToFrame(step, fps))) : 0;
+        if (delta != 0) AdjustEndFrame(segment, delta);
+    }
+
+    /// <summary>起点移动指定帧数；相邻上一分镜的终点同步移动，避免重叠或裂缝。</summary>
+    public void AdjustStartFrame(Segment segment, int deltaFrames)
+    {
+        if (deltaFrames == 0) return;
+        if (!ApplyFrameEdit(segment, segment.StartFrame + deltaFrames, segment.EndFrame))
         {
             return;
         }
-        if (!ApplyTimeEdit(segment, segment.StartTime, newEnd))
+        RequestPlay(segment, segment.StartTime, Math.Min(segment.StartTime + 2, segment.EndTime));
+    }
+
+    /// <summary>终点移动指定帧数；相邻下一分镜的起点同步移动，保持整条时间轴连续。</summary>
+    public void AdjustEndFrame(Segment segment, int deltaFrames)
+    {
+        if (deltaFrames == 0) return;
+        if (!ApplyFrameEdit(segment, segment.StartFrame, segment.EndFrame + deltaFrames))
         {
             return;
         }
-        RequestPlay(segment, Math.Max(segment.StartTime, newEnd - 1), newEnd);
+        RequestPlay(segment, Math.Max(segment.StartTime, segment.EndTime - 1), segment.EndTime);
     }
 
     /// <summary>直接设置开始时间。</summary>
     public void SetStartTime(Segment segment, double newStart)
     {
-        var clamped = Math.Max(0, newStart);
-        if (clamped >= segment.EndTime - 0.2)
+        var fps = EffectiveEditFps(segment);
+        if (fps <= 0) return;
+        if (!ApplyFrameEdit(segment, FrameTime.SecondsToFrame(newStart, fps), segment.EndFrame))
         {
             return;
         }
-        if (!ApplyTimeEdit(segment, clamped, segment.EndTime))
-        {
-            return;
-        }
-        RequestPlay(segment, clamped, Math.Min(clamped + 2, segment.EndTime));
+        RequestPlay(segment, segment.StartTime, Math.Min(segment.StartTime + 2, segment.EndTime));
     }
 
     /// <summary>直接设置结束时间。</summary>
     public void SetEndTime(Segment segment, double newEnd)
     {
-        var videoDuration = segment.Video?.Duration ?? double.MaxValue;
-        var clamped = Math.Min(videoDuration, newEnd);
-        if (clamped <= segment.StartTime + 0.2)
+        var fps = EffectiveEditFps(segment);
+        if (fps <= 0) return;
+        if (!ApplyFrameEdit(segment, segment.StartFrame, FrameTime.SecondsToFrame(newEnd, fps)))
         {
             return;
         }
-        if (!ApplyTimeEdit(segment, segment.StartTime, clamped))
-        {
-            return;
-        }
-        RequestPlay(segment, Math.Max(segment.StartTime, clamped - 1), clamped);
+        RequestPlay(segment, Math.Max(segment.StartTime, segment.EndTime - 1), segment.EndTime);
     }
 
     /// <summary>
-    /// P0-17：统一时间编辑落盘。改内存 + 重提台词后立即保存；保存失败则<b>整体回滚</b>
-    /// （StartTime/EndTime/Text 全部还原），避免「UI 显示已改但 DB 没存、刷新后回退」的静默失败。
-    /// 返回 true 表示已成功持久化。
+    /// 帧级边界编辑。分镜边界是共享边界：改当前起点会同步上一条终点，改当前终点会同步下一条起点。
+    /// 保存失败时所有受影响分镜整体回滚，绝不留下内存与数据库不一致。
     /// </summary>
-    private bool ApplyTimeEdit(Segment segment, double newStart, double newEnd)
+    private bool ApplyFrameEdit(Segment segment, int newStartFrame, int newEndFrame)
     {
-        var oldStart = segment.StartTime;
-        var oldEnd = segment.EndTime;
-        var oldText = segment.Text;
+        var fps = EffectiveEditFps(segment);
+        if (fps <= 0) return false;
 
-        segment.StartTime = newStart;
-        segment.EndTime = newEnd;
-        ReExtractText(segment);
+        var sameVideo = _segments
+            .Where(s => s.VideoId == segment.VideoId)
+            .OrderBy(s => s.StartFrame)
+            .ToList();
+        var index = sameVideo.FindIndex(s => s.Id == segment.Id);
+        var previous = index > 0 ? sameVideo[index - 1] : null;
+        var next = index >= 0 && index + 1 < sameVideo.Count ? sameVideo[index + 1] : null;
+        var maxFrame = segment.Video?.Duration > 0
+            ? FrameTime.SecondsToFrame(segment.Video.Duration, fps)
+            : int.MaxValue;
+
+        newStartFrame = Math.Max(0, newStartFrame);
+        newEndFrame = Math.Min(maxFrame, newEndFrame);
+        if (newStartFrame >= newEndFrame) return false;
+        if (previous is not null && newStartFrame <= previous.StartFrame) return false;
+        if (next is not null && newEndFrame >= next.EndFrame) return false;
+
+        var affected = new List<Segment> { segment };
+        if (previous is not null && newStartFrame != segment.StartFrame) affected.Add(previous);
+        if (next is not null && newEndFrame != segment.EndFrame) affected.Add(next);
+        var snapshots = affected.ToDictionary(
+            s => s.Id,
+            s => (s.StartFrame, s.EndFrame, s.StartTime, s.EndTime, s.Fps, s.Text));
+
+        segment.SetBoundsFrames(newStartFrame, newEndFrame, fps);
+        if (previous is not null && newStartFrame != snapshots[segment.Id].StartFrame)
+        {
+            previous.SetBoundsFrames(previous.StartFrame, newStartFrame, fps);
+        }
+        if (next is not null && newEndFrame != snapshots[segment.Id].EndFrame)
+        {
+            next.SetBoundsFrames(newEndFrame, next.EndFrame, fps);
+        }
+        foreach (var item in affected) ReExtractText(item);
 
         if (Save())
         {
+            _logger.LogInformation(
+                "[FrameEditDiag] segment={Segment} start={StartFrame} end={EndFrame} fps={Fps:F3} affected={Affected}",
+                segment.Id, segment.StartFrame, segment.EndFrame, fps, affected.Count);
             return true;
         }
-        // 保存失败：还原内存值，保持与 DB 一致（用户会看到微调"弹回"，即未生效的信号）。
-        segment.StartTime = oldStart;
-        segment.EndTime = oldEnd;
-        segment.Text = oldText;
+
+        foreach (var item in affected)
+        {
+            var old = snapshots[item.Id];
+            item.StartFrame = old.StartFrame;
+            item.EndFrame = old.EndFrame;
+            item.StartTime = old.StartTime;
+            item.EndTime = old.EndTime;
+            item.Fps = old.Fps;
+            item.Text = old.Text;
+        }
         return false;
     }
+
+    private static double EffectiveEditFps(Segment segment) =>
+        segment.EffectiveFps > 0 ? segment.EffectiveFps : 30.0;
 
     /// <summary>根据当前时间范围重新从 ASR 提取台词（中心点匹配，避免跨段重复）。</summary>
     private static void ReExtractText(Segment segment)

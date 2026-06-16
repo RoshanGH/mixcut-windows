@@ -17,6 +17,20 @@
     </ResourceDictionary.MergedDictionaries>
 
 
+    <!-- ========== 全局文字渲染（隐式 Window 样式，应用级生效） ==========
+         根因：WPF 默认 TextFormattingMode=Ideal，会把字形放到亚像素位置，10~14px 的中文/小字
+         在 100%~150% DPI 下发虚、笔画发灰，是「不像商业软件」的头号视觉元凶。
+         Display 模式把字形对齐像素网格 → 小字号锐利；ClearType 进一步增强清晰度。
+         FontFamily/TextOptions 都是可继承属性，设在 Window 上自动级联到全部子元素与对话框。 -->
+    <Style TargetType="Window">
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI, Microsoft YaHei" />
+        <Setter Property="UseLayoutRounding" Value="True" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+    </Style>
+
     <!-- ========== Button ========== -->
 
     <!-- 主按钮（蓝底白字） -->
@@ -35,7 +49,11 @@
                     <Border x:Name="root"
                             Background="{TemplateBinding Background}"
                             CornerRadius="{StaticResource CornerRadiusMd}"
-                            Padding="{TemplateBinding Padding}">
+                            Padding="{TemplateBinding Padding}"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <ScaleTransform ScaleX="1" ScaleY="1" />
+                        </Border.RenderTransform>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -43,7 +61,12 @@
                             <Setter Property="Background" TargetName="root" Value="{StaticResource AccentBlueDarkBrush}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Opacity" TargetName="root" Value="0.85" />
+                            <Setter Property="Opacity" TargetName="root" Value="0.9" />
+                            <Setter TargetName="root" Property="RenderTransform">
+                                <Setter.Value>
+                                    <ScaleTransform ScaleX="0.97" ScaleY="0.97" />
+                                </Setter.Value>
+                            </Setter>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" TargetName="root" Value="0.42" />

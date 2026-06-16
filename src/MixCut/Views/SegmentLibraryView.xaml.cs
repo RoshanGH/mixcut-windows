@@ -539,9 +539,9 @@ public partial class SegmentLibraryView : UserControl, IProjectView
         var thumbGrid = new Grid();
         if (seg.Video is { LocalPath: var path } && File.Exists(path))
         {
-            // 分镜库卡片：hover 350ms 自动播放 + 全局唯一播放，对齐 Mac SegmentInlinePlayer。
-            var player = new Components.InlineVideoPlayer { AutoPlayOnHover = true };
-            player.SetSegment(path, seg.ThumbnailPath, seg.StartTime, seg.EndTime);
+            // 分镜库卡片：全局点击播放（点 ▶ 才播），不再 hover 自动播。
+            var player = new Components.InlineVideoPlayer { AutoPlayOnHover = false };
+            player.SetSegment(path, seg.ThumbnailPath, seg.StartFrame, seg.EndFrame, seg.EffectiveFps);
             thumbGrid.Children.Add(player);
         }
         else
@@ -704,10 +704,11 @@ public partial class SegmentLibraryView : UserControl, IProjectView
         });
         head.Children.Add(new TextBlock
         {
-            Text = $"{seg.StartTime.ToString("F1", CultureInfo.InvariantCulture)}s-" +
-                   $"{seg.EndTime.ToString("F1", CultureInfo.InvariantCulture)}s " +
+            // issue #7：剪映式时间码（时:分:秒:帧），fps 未知时退化为秒。
+            Text = $"{seg.StartTimecode} - {seg.EndTimecode} " +
                    $"({seg.Duration.ToString("F1", CultureInfo.InvariantCulture)}s)",
             FontSize = 11, Foreground = Brushes.Gray,
+            ToolTip = "时:分:秒:帧（帧位按视频帧率进位）",
         });
         info.Children.Add(head);
 
@@ -751,10 +752,14 @@ public partial class SegmentLibraryView : UserControl, IProjectView
             Margin = new Thickness(0, 6, 0, 0),
         };
 
+        // issue #7：逐帧微调。步长 = 1 帧（1/fps）；fps 未知时退化为 0.1s。
+        var fps = seg.EffectiveFps;
+        var step = fps > 0 ? 1.0 / fps : 0.1;
+
         row.Children.Add(BuildSingleTimeAdjuster(
             seg.StartTime,
-            minus: () => _vm.AdjustStartTime(seg, -0.1),
-            plus: () => _vm.AdjustStartTime(seg, +0.1),
+            minus: () => _vm.AdjustStartTime(seg, -step),
+            plus: () => _vm.AdjustStartTime(seg, +step),
             commit: v => _vm.SetStartTime(seg, v),
             seg));
 
@@ -767,8 +772,8 @@ public partial class SegmentLibraryView : UserControl, IProjectView
 
         row.Children.Add(BuildSingleTimeAdjuster(
             seg.EndTime,
-            minus: () => _vm.AdjustEndTime(seg, -0.1),
-            plus: () => _vm.AdjustEndTime(seg, +0.1),
+            minus: () => _vm.AdjustEndTime(seg, -step),
+            plus: () => _vm.AdjustEndTime(seg, +step),
             commit: v => _vm.SetEndTime(seg, v),
             seg));
 
@@ -806,6 +811,7 @@ public partial class SegmentLibraryView : UserControl, IProjectView
             Width = 18, Height = 18,
             Background = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF4)),
             BorderThickness = new Thickness(0),
+            ToolTip = "向前一帧",
         };
         minusBtn.Click += (_, _) =>
         {
@@ -843,6 +849,7 @@ public partial class SegmentLibraryView : UserControl, IProjectView
             Width = 18, Height = 18,
             Background = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF4)),
             BorderThickness = new Thickness(0),
+            ToolTip = "向后一帧",
         };
         plusBtn.Click += (_, _) =>
         {

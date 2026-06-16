@@ -30,6 +30,13 @@ public sealed class ThumbnailCache
     /// <summary>最多缓存张数。</summary>
     private const int CountLimit = 300;
 
+    /// <summary>
+    /// 缩略图解码目标宽度（像素）。原图是源视频全分辨率（竖屏常见 1080），但只显示在
+    /// ~315px 物理宽的卡片里。按 540 解码 = 覆盖最大显示场景 + 150% DPI 余量仍清晰，
+    /// 同时把单张位图内存从 ~8MB 砍到 ~2MB，几十张卡同屏内存/GPU 压力大幅下降。
+    /// </summary>
+    private const int ThumbnailDecodeWidth = 540;
+
     private ThumbnailCache() { }
 
     /// <summary>
@@ -125,10 +132,15 @@ public sealed class ThumbnailCache
         try
         {
             // 读盘走 OnLoad，避免后续访问失败；Freeze 让跨线程使用安全。
+            // 性能（消卡顿）：缩略图原图是源视频全分辨率（竖屏常见 1080×1920），但只显示在
+            // ~315px 物理宽的卡片里。不设 DecodePixelWidth 时 WPF 会把整张 8MB 位图解进内存再
+            // GPU 缩放，几十张卡同屏 = 数百 MB 位图 + 每帧全分辨率降采样，是分镜库卡顿主因之一。
+            // 按显示尺寸 540px 解码（覆盖卡片 + 导入页 + 150% DPI 余量，仍清晰），内存 ~5x 降。
             using var stream = File.OpenRead(path);
             var bm = new BitmapImage();
             bm.BeginInit();
             bm.CacheOption = BitmapCacheOption.OnLoad;
+            bm.DecodePixelWidth = ThumbnailDecodeWidth;
             bm.StreamSource = stream;
             bm.EndInit();
             bm.Freeze();

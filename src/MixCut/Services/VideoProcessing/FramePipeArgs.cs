@@ -11,7 +11,7 @@ namespace MixCut.Services.VideoProcessing;
 /// </summary>
 public static class FramePipeArgs
 {
-    private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string F(double v) => v.ToString("0.#########", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// 视频裸帧管道参数：输出 bgra 像素流（WPF <c>WriteableBitmap</c> 直接可用）。
@@ -21,9 +21,27 @@ public static class FramePipeArgs
     /// </summary>
     public static string[] Video(string path, double start, double dur, int w, int h, int fps) => new[]
     {
+        // 注：实测「减少探测」参数（-analyzeduration 0 / 小 probesize / nobuffer）反而拖慢 -ss 精确 seek
+        // （深分镜首帧从 ~680ms 涨到 ~1950ms），已移除。保持默认探测 + 输入级快速 seek 最快。
         "-ss", F(start), "-i", path, "-t", F(dur), "-an",
         "-vf", $"scale={w}:{h}:force_original_aspect_ratio=decrease," +
                $"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps}",
+        "-f", "rawvideo", "-pix_fmt", "bgra", "pipe:1",
+    };
+
+    /// <summary>
+    /// 分镜预览专用：从源视频按整数帧裁切。EndFrame 为 exclusive，因此输出的最后画面必定是
+    /// EndFrame-1，不会先越过边界再 seek 回来。
+    /// </summary>
+    public static string[] VideoFrames(
+        string path, int startFrame, int endFrame, int w, int h) => new[]
+    {
+        "-i", path, "-an",
+        "-vf", $"trim=start_frame={Math.Max(0, startFrame)}:end_frame={Math.Max(startFrame + 1, endFrame)}," +
+               "setpts=PTS-STARTPTS," +
+               $"scale={w}:{h}:force_original_aspect_ratio=decrease," +
+               $"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
+        "-fps_mode", "passthrough",
         "-f", "rawvideo", "-pix_fmt", "bgra", "pipe:1",
     };
 

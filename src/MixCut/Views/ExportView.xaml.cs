@@ -114,7 +114,7 @@ public partial class ExportView : UserControl, IProjectView
         StrategyCountText.Text = _schemeVM.Strategies.Count.ToString(CultureInfo.InvariantCulture);
         SchemeCountText.Text = schemes.Count.ToString(CultureInfo.InvariantCulture);
         var totalDuration = schemes.Sum(s => s.EstimatedDuration);
-        TotalDurationText.Text = totalDuration.ToString("F0", CultureInfo.InvariantCulture) + "s";
+        TotalDurationText.Text = Utilities.FrameTime.HumanDuration(totalDuration);
         RefreshEstimatedSize();
 
         var hasAny = schemes.Count > 0;

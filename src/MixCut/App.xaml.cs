@@ -128,6 +128,88 @@ public partial class App : Application
         }
     }
 
+    /// <summary>帧精确预览自测：验证输出帧数与最后一帧位置都严格匹配 [startFrame,endFrame)。</summary>
+    private static async Task RunFramePreviewSelfTestAsync(
+        string path, int startFrame, int endFrame, double fps)
+    {
+        try
+        {
+            var player = new Views.Components.FfmpegFramePlayer { Width = 320, Height = 180 };
+            var failed = false;
+            var ended = false;
+            var reason = "";
+            player.Failed += (_, r) => { failed = true; reason = r; };
+            player.Ended += (_, _) => ended = true;
+            var host = new Window
+            {
+                Width = 360, Height = 240, Left = -3000, Top = -3000,
+                ShowInTaskbar = false, WindowStyle = WindowStyle.None, Content = player,
+            };
+            host.Show();
+            await Task.Delay(200);
+
+            var start = Utilities.FrameTime.FrameToSeconds(startFrame, fps);
+            var duration = Utilities.FrameTime.FrameToSeconds(endFrame - startFrame, fps);
+            player.Open(path, start, duration, startFrame: startFrame, endFrame: endFrame, sourceFps: fps);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.Elapsed < TimeSpan.FromSeconds(Math.Max(8, duration + 5))
+                   && !failed && !ended)
+            {
+                await Task.Delay(100);
+            }
+
+            var expected = Math.Max(0, endFrame - startFrame);
+            var expectedLast = Utilities.FrameTime.FrameToSeconds(
+                Utilities.FrameTime.LastIncludedFrame(startFrame, endFrame), fps);
+            var ok = ended && !failed && player.FramesRendered == expected
+                             && Math.Abs(player.Position.TotalSeconds - expectedLast) < 0.5 / fps;
+            var line = $"[FramePreviewSelfTest] ok={ok} expected={expected} actual={player.FramesRendered} " +
+                       $"expectedLast={expectedLast:F6} actualLast={player.Position.TotalSeconds:F6} " +
+                       $"range=[{startFrame},{endFrame}) fps={fps:F3} reason={reason}";
+            Log.Information(line);
+            Console.WriteLine(line);
+            player.Stop();
+            host.Close();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[FramePreviewSelfTest] 异常");
+            Console.WriteLine("[FramePreviewSelfTest] EXCEPTION " + ex.Message);
+        }
+    }
+
+    private static async Task RunFrameCutSelfTestAsync(
+        string path, int startFrame, int endFrame, double fps, string outputPath)
+    {
+        try
+        {
+            var runner = new Services.VideoProcessing.FFmpegRunner(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<
+                    Services.VideoProcessing.FFmpegRunner>.Instance);
+            await runner.CutSegmentFramesAsync(
+                new Services.VideoProcessing.FrameClip(path, startFrame, endFrame, fps),
+                outputPath);
+            var frameText = await runner.RunProbeAsync(new[]
+            {
+                "-v", "error", "-select_streams", "v:0",
+                "-count_frames", "-show_entries", "stream=nb_read_frames",
+                "-of", "default=nokey=1:noprint_wrappers=1", outputPath,
+            });
+            var actual = int.TryParse(frameText.Trim(), out var count) ? count : -1;
+            var expected = Math.Max(0, endFrame - startFrame);
+            var ok = actual == expected;
+            var line = $"[FrameCutSelfTest] ok={ok} expected={expected} actual={actual} " +
+                       $"range=[{startFrame},{endFrame}) fps={fps:F3} output={outputPath}";
+            Log.Information(line);
+            Console.WriteLine(line);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[FrameCutSelfTest] 异常");
+            Console.WriteLine("[FrameCutSelfTest] EXCEPTION " + ex.Message);
+        }
+    }
+
     /// <summary>
     /// 叙事结构 AI 自测（issue #6 §六，构建机用真 DeepSeek 跑）：找带标签分镜最多的项目 →
     /// 取最高频 3 个标签建 3 段 → 调 CreateNarrativeStructureAsync 真生成 → 打变体结果。
@@ -230,6 +312,46 @@ public partial class App : Application
             return;
         }
 
+        var frameSelfTestIdx = Array.IndexOf(e.Args, "--selftest-frame-preview");
+        if (frameSelfTestIdx >= 0)
+        {
+            var args = e.Args.Skip(frameSelfTestIdx + 1).Take(4).ToArray();
+            if (args.Length == 4
+                && int.TryParse(args[1], out var startFrame)
+                && int.TryParse(args[2], out var endFrame)
+                && double.TryParse(args[3], System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var fps))
+            {
+                await RunFramePreviewSelfTestAsync(args[0], startFrame, endFrame, fps);
+            }
+            else
+            {
+                Console.WriteLine("[FramePreviewSelfTest] 参数错误: <video> <startFrame> <endFrame> <fps>");
+            }
+            Shutdown();
+            return;
+        }
+
+        var cutSelfTestIdx = Array.IndexOf(e.Args, "--selftest-frame-cut");
+        if (cutSelfTestIdx >= 0)
+        {
+            var args = e.Args.Skip(cutSelfTestIdx + 1).Take(5).ToArray();
+            if (args.Length == 5
+                && int.TryParse(args[1], out var startFrame)
+                && int.TryParse(args[2], out var endFrame)
+                && double.TryParse(args[3], System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var fps))
+            {
+                await RunFrameCutSelfTestAsync(args[0], startFrame, endFrame, fps, args[4]);
+            }
+            else
+            {
+                Console.WriteLine("[FrameCutSelfTest] 参数错误: <video> <startFrame> <endFrame> <fps> <output>");
+            }
+            Shutdown();
+            return;
+        }
+
         // QW-10：冷启动期 host 启动 + DB 迁移 + 硬件探测有数秒空白，先弹启动闪屏给即时反馈，
         // 避免「双击了没反应」的错觉。try/catch 兜底 —— 闪屏永远不能阻断或拖垮真正的启动。
         SplashWindow? splash = null;
@@ -300,6 +422,10 @@ public partial class App : Application
             // issue #6 自定义叙事结构：MixStrategy 新增两列
             AddColumnIfMissing(db, "Strategies", "IsNarrativeTemplate", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(db, "Strategies", "NarrativeSlotsJson", "TEXT");
+            // issue #7 帧精确重构：Segment 新增帧号 / fps 列（帧为真值，秒派生）
+            AddColumnIfMissing(db, "Segments", "StartFrame", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(db, "Segments", "EndFrame", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(db, "Segments", "Fps", "REAL NOT NULL DEFAULT 0");
 
             // 清理上次未正常完成的中间态视频（崩溃/强退导致状态卡在分析中）。
             // 对齐 macOS 版 MixCutApp.resetStaleAnalyzingStatus。
@@ -312,6 +438,9 @@ public partial class App : Application
             var settingsForMigration = _host.Services.GetRequiredService<AppSettings>();
             var loggerForMigration = _host.Services.GetRequiredService<ILogger<App>>();
             EnsureCustomGroupStrategy(db, settingsForMigration, loggerForMigration);
+
+            // issue #7 帧精确重构：把旧分镜的「秒」边界按视频 fps 回填为帧号（一次性，防重）
+            BackfillSegmentFrames(db, settingsForMigration, loggerForMigration);
         }
 
         // issue #6 叙事结构 AI 自测：`--selftest-narrative` 用真 DeepSeek 跑一次生成后退出（构建机验证）。
@@ -476,6 +605,56 @@ public partial class App : Application
         catch (Exception ex)
         {
             logger.LogError(ex, "[CustomGroupMigration] 迁移失败（不阻断启动）");
+        }
+    }
+
+    /// <summary>
+    /// issue #7 帧精确重构：把旧分镜的「秒」边界按所属视频 fps 回填为帧号（StartFrame/EndFrame/Fps），
+    /// 并把秒量化到帧网格（StartTime = StartFrame/Fps），消除历史浮点累积误差。
+    /// 用 AppSettings.DidBackfillSegmentFramesV1 防重；视频 fps 未知（=0）的分镜跳过、留待下次；失败不阻断启动。
+    /// </summary>
+    private static void BackfillSegmentFrames(MixCutDbContext db, AppSettings settings, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        if (settings.DidBackfillSegmentFramesV1)
+        {
+            return;
+        }
+
+        try
+        {
+            // 只回填尚未回填（Fps==0）的分镜；连带其视频拿 fps。
+            var segments = db.Segments.Include(s => s.Video).Where(s => s.Fps <= 0).ToList();
+            var filled = 0;
+            var skippedNoFps = 0;
+            foreach (var seg in segments)
+            {
+                var fps = seg.Video?.Fps ?? 0;
+                if (fps <= 0)
+                {
+                    skippedNoFps++;
+                    continue;
+                }
+                seg.SetBoundsSeconds(seg.StartTime, seg.EndTime, fps);
+                filled++;
+            }
+
+            if (filled > 0)
+            {
+                db.SaveChanges();
+            }
+            logger.LogInformation(
+                "[FrameBackfill] 回填 {Filled} 个分镜帧号；跳过 {Skipped} 个（视频 fps 未知，留待下次）",
+                filled, skippedNoFps);
+
+            // 仅当没有「因 fps 缺失而跳过」的分镜时才标记完成，否则下次启动继续补。
+            if (skippedNoFps == 0)
+            {
+                settings.DidBackfillSegmentFramesV1 = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[FrameBackfill] 帧号回填失败（不阻断启动）");
         }
     }
 

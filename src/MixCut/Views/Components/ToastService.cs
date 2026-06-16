@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
@@ -16,8 +17,11 @@ public enum ToastStyle
 
 /// <summary>
 /// 简易 Toast 服务。在 MainWindow 构造里调用 <see cref="Initialize"/> 注入一个顶层 Panel 作为容器，
-/// 后续任何代码都可调 <see cref="Show"/> 弹出 2.5s 自动消失的浮层提示。
+/// 后续任何代码都可调 <see cref="Show"/> 弹出自动消失的浮层提示。
 /// 对应 macOS 版 ToastCenter。
+///
+/// 支持可选的【可点击操作按钮】（如删除后的「撤销」）：传 <paramref name="actionText"/> + <paramref name="onAction"/>
+/// 即在提示右侧渲染一个可点击胶囊；此时提示停留更久（给用户时间点击）且开启命中测试。
 /// </summary>
 public static class ToastService
 {
@@ -31,26 +35,23 @@ public static class ToastService
         _host = host;
     }
 
-    public static void Show(string message, ToastStyle style = ToastStyle.Info)
+    public static void Show(
+        string message, ToastStyle style = ToastStyle.Info,
+        string? actionText = null, Action? onAction = null)
     {
         if (_host is null || string.IsNullOrEmpty(message)) return;
         var dispatcher = _host.Dispatcher;
         if (!dispatcher.CheckAccess())
         {
-            dispatcher.BeginInvoke(() => Show(message, style));
+            dispatcher.BeginInvoke(() => Show(message, style, actionText, onAction));
             return;
         }
 
-        // 旧 toast 先移除
-        if (_current is not null)
-        {
-            _host.Children.Remove(_current);
-            _current = null;
-        }
-        _timer?.Stop();
+        Dismiss();
 
         var (bg, _) = ResolveColors(style);
         var icon = ResolveIcon(style);
+        var hasAction = !string.IsNullOrEmpty(actionText) && onAction is not null;
 
         var sp = new StackPanel { Orientation = Orientation.Horizontal };
         sp.Children.Add(new TextBlock
@@ -74,6 +75,40 @@ public static class ToastService
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
 
+        if (hasAction)
+        {
+            // 可点击「撤销」胶囊：半透明白底，hover 提亮，点了执行回调并立刻收起 toast。
+            var idle = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+            var hover = new SolidColorBrush(Color.FromArgb(0x73, 0xFF, 0xFF, 0xFF));
+            idle.Freeze();
+            hover.Freeze();
+            var actionBorder = new Border
+            {
+                Background = idle,
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(11, 3, 11, 3),
+                Margin = new Thickness(14, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Child = new TextBlock
+                {
+                    Text = actionText,
+                    FontSize = 12,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = Brushes.White,
+                },
+            };
+            actionBorder.MouseEnter += (_, _) => actionBorder.Background = hover;
+            actionBorder.MouseLeave += (_, _) => actionBorder.Background = idle;
+            actionBorder.MouseLeftButtonUp += (_, _) =>
+            {
+                Dismiss();
+                try { onAction!(); }
+                catch (Exception ex) { Serilog.Log.Warning(ex, "[Toast] 操作按钮回调执行失败"); }
+            };
+            sp.Children.Add(actionBorder);
+        }
+
         var border = new Border
         {
             Background = bg,
@@ -90,22 +125,28 @@ public static class ToastService
                 ShadowDepth = 2,
             },
             Child = sp,
-            IsHitTestVisible = false,
+            // 无操作按钮时不挡鼠标（纯提示）；有按钮时必须开启命中测试，否则点不到（旧版恒 false 是撤销点不动的根因）。
+            IsHitTestVisible = hasAction,
         };
         _host.Children.Add(border);
         _current = border;
 
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
-        _timer.Tick += (_, _) =>
-        {
-            _timer?.Stop();
-            if (_host is not null && _current is not null)
-            {
-                _host.Children.Remove(_current);
-                _current = null;
-            }
-        };
+        // 有可点操作时停留更久（6s），给用户时间点「撤销」；纯提示 2.5s。
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(hasAction ? 6.0 : 2.5) };
+        _timer.Tick += (_, _) => Dismiss();
         _timer.Start();
+    }
+
+    /// <summary>立即收起当前 toast 并停表（点击撤销、超时、被新 toast 顶替时共用）。</summary>
+    private static void Dismiss()
+    {
+        _timer?.Stop();
+        _timer = null;
+        if (_host is not null && _current is not null)
+        {
+            _host.Children.Remove(_current);
+            _current = null;
+        }
     }
 
     private static (Brush Bg, Brush Fg) ResolveColors(ToastStyle style) => style switch

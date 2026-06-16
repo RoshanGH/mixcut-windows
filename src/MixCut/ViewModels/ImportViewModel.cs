@@ -542,8 +542,6 @@ public partial class ImportViewModel : ObservableObject
             var segment = new Segment
             {
                 SegmentIndex = $"seg_{i + 1:D3}",
-                StartTime = adjustedStart,
-                EndTime = adjustedEnd,
                 Text = finalText,
                 SemanticTypes = aiSeg.EffectiveTypes.Select(NormalizeSemanticType).ToList(),
                 PositionType = NormalizePositionType(aiSeg.Position),
@@ -552,6 +550,8 @@ public partial class ImportViewModel : ObservableObject
                 Keywords = aiSeg.Keywords,
                 VideoId = video.Id,
             };
+            // issue #7：边界量化到帧（帧为真值，秒派生）。fps 显式取视频帧率（segment.Video 尚未关联）。
+            segment.SetBoundsSeconds(adjustedStart, adjustedEnd, video.Fps);
             db.Segments.Add(segment);
             created.Add(segment);
         }
@@ -738,6 +738,7 @@ public partial class ImportViewModel : ObservableObject
             {
                 var prev = segments[i - 1];
                 prev.EndTime = seg.EndTime;
+                prev.EndFrame = seg.EndFrame; // issue #7：同步帧号（同视频同 fps），保持帧/秒一致
                 prev.Text = JoinSegmentText(prev.Text, seg.Text);
                 var kw = prev.Keywords.ToList();
                 kw.AddRange(seg.Keywords.Where(k => !kw.Contains(k)));
@@ -749,6 +750,7 @@ public partial class ImportViewModel : ObservableObject
             {
                 var next = segments[1];
                 next.StartTime = seg.StartTime;
+                next.StartFrame = seg.StartFrame; // issue #7：同步帧号
                 next.Text = JoinSegmentText(seg.Text, next.Text);
                 db.Segments.Remove(seg);
                 segments.RemoveAt(0);

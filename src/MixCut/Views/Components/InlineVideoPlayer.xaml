@@ -29,8 +29,15 @@
         <Grid x:Name="PlayingState" Visibility="Collapsed">
             <components:FfmpegFramePlayer x:Name="Player" Stretch="Uniform"
                           Opened="OnMediaOpened" Ended="OnMediaEnded" Failed="OnMediaFailed" />
-            <!-- 控制栏 -->
-            <Border VerticalAlignment="Bottom" Background="#A0000000" Padding="6,3">
+            <!-- 控制栏：自下而上的黑色渐变叠层（剪映/YouTube 风格），比纯黑条更通透好看 -->
+            <Border VerticalAlignment="Bottom" Padding="8,10,8,5">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#00000000" Offset="0" />
+                        <GradientStop Color="#B3000000" Offset="0.55" />
+                        <GradientStop Color="#D9000000" Offset="1" />
+                    </LinearGradientBrush>
+                </Border.Background>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -41,21 +48,24 @@
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0" x:Name="PauseButton" Click="OnPauseClick"
                             Background="Transparent" BorderThickness="0" Foreground="White"
-                            Width="22" Height="22" FontSize="11" Content="⏸" />
+                            Width="20" Height="20" FontSize="11" Content="⏸" Cursor="Hand" />
                     <TextBlock Grid.Column="1" x:Name="CurrentTimeText" Text="0:00"
-                               Foreground="White" FontSize="9" VerticalAlignment="Center"
+                               Foreground="White" FontSize="9"
+                               FontFamily="{StaticResource FontFamilyMono}" VerticalAlignment="Center"
                                Margin="4,0,8,0" />
                     <Slider Grid.Column="2" x:Name="ProgressSlider" Minimum="0" Maximum="1"
                             VerticalAlignment="Center"
+                            Style="{StaticResource MediaSliderStyle}"
                             Thumb.DragStarted="OnSliderDragStart"
                             Thumb.DragCompleted="OnSliderDragEnd"
                             ValueChanged="OnSliderValueChanged" />
                     <TextBlock Grid.Column="3" x:Name="DurationText" Text="0:00"
-                               Foreground="White" FontSize="9" VerticalAlignment="Center"
+                               Foreground="White" FontSize="9"
+                               FontFamily="{StaticResource FontFamilyMono}" VerticalAlignment="Center"
                                Margin="8,0,4,0" />
                     <Button Grid.Column="4" x:Name="StopButton" Click="OnStopClick"
                             Background="Transparent" BorderThickness="0" Foreground="White"
-                            Width="22" Height="22" FontSize="11" Content="✕" />
+                            Width="20" Height="20" FontSize="10" Content="✕" Cursor="Hand" />
                 </Grid>
             </Border>
         </Grid>

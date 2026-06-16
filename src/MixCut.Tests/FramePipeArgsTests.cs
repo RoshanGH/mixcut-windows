@@ -51,4 +51,17 @@ public class FramePipeArgsTests
         Assert.Contains("scale=640:360", s);
         Assert.Contains("fps=25", s);
     }
+
+    [Fact]
+    public void VideoFramesArgs_UsesExclusiveFrameTrimWithoutSecondSeek()
+    {
+        var args = FramePipeArgs.VideoFrames("C:\\v.mp4", 150, 181, 320, 180);
+        var s = string.Join(" ", args);
+
+        Assert.DoesNotContain("-ss", args);
+        Assert.DoesNotContain("-t", args);
+        Assert.Contains("trim=start_frame=150:end_frame=181", s);
+        Assert.Contains("setpts=PTS-STARTPTS", s);
+        Assert.Contains("-fps_mode passthrough", s);
+    }
 }

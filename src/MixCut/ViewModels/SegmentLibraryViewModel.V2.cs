@@ -241,26 +241,139 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
 
     void ISegmentCardHost.AdjustStartTime(SegmentCardViewModel card, double step)
     {
-        AdjustStartTime(card.Segment, step);
-        card.RefreshFromSegment();
+        AdjustStartFrame(card.Segment, Math.Sign(step));
+        RefreshCardsForVideo(card.Segment.VideoId);
+        ShowBoundaryFrame(card, isStart: true);
     }
 
     void ISegmentCardHost.AdjustEndTime(SegmentCardViewModel card, double step)
     {
-        AdjustEndTime(card.Segment, step);
-        card.RefreshFromSegment();
+        AdjustEndFrame(card.Segment, Math.Sign(step));
+        RefreshCardsForVideo(card.Segment.VideoId);
+        ShowBoundaryFrame(card, isStart: false);
     }
 
     void ISegmentCardHost.SetStartTime(SegmentCardViewModel card, double newStart)
     {
         SetStartTime(card.Segment, newStart);
-        card.RefreshFromSegment();
+        RefreshCardsForVideo(card.Segment.VideoId);
+        ShowBoundaryFrame(card, isStart: true);
     }
 
     void ISegmentCardHost.SetEndTime(SegmentCardViewModel card, double newEnd)
     {
         SetEndTime(card.Segment, newEnd);
-        card.RefreshFromSegment();
+        RefreshCardsForVideo(card.Segment.VideoId);
+        ShowBoundaryFrame(card, isStart: false);
+    }
+
+    private void RefreshCardsForVideo(Guid? videoId)
+    {
+        foreach (var card in _cardIndex.Values.Where(c => c.Segment.VideoId == videoId))
+        {
+            card.RefreshFromSegment();
+        }
+    }
+
+    // ============ 剪映式逐帧边界预览 ============
+
+    /// <summary>已解码边界帧缓存（key=视频路径|帧号），来回微调同一帧立即命中、不重复抽帧。</summary>
+    private readonly Dictionary<string, System.Windows.Media.ImageSource> _scrubFrameCache = new();
+
+    /// <summary>每张卡的最新抽帧请求序号：连点微调时只让最后一次结果落地，避免旧帧覆盖新帧。</summary>
+    private readonly Dictionary<Guid, int> _scrubToken = new();
+
+    private string? _scrubDir;
+
+    /// <summary>
+    /// 调 IN/OUT 后把卡片预览切到「当前调到的那一帧」：调 IN 显示新起始帧、调 OUT 显示新末帧
+    /// （EndFrame 不含，末画面是 EndFrame-1）。对齐剪映：边界走到哪一帧，预览就显示哪一帧，逐帧跟随。
+    /// 抽帧用自带 ffmpeg 输入级 seek（与缩略图同源），带缓存 + 最新优先，连点也不乱。
+    /// </summary>
+    private async void ShowBoundaryFrame(SegmentCardViewModel card, bool isStart)
+    {
+        try
+        {
+            if (_ffmpeg is null) return;
+            var seg = card.Segment;
+            var path = seg.Video?.LocalPath;
+            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return;
+            var fps = seg.EffectiveFps;
+            if (fps <= 0) return;
+
+            var frame = isStart
+                ? Math.Max(0, seg.StartFrame)
+                : Utilities.FrameTime.LastIncludedFrame(seg.StartFrame, seg.EndFrame);
+            var timeSec = Utilities.FrameTime.FrameToSeconds(frame, fps);
+
+            // 最新优先：本卡每次请求递增序号，await 回来后若已不是最新就丢弃（连点时只认最后一帧）。
+            var token = (_scrubToken.TryGetValue(seg.Id, out var t) ? t : 0) + 1;
+            _scrubToken[seg.Id] = token;
+
+            var key = path + "|" + frame.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (_scrubFrameCache.TryGetValue(key, out var cached))
+            {
+                card.ScrubImage = cached;
+                return;
+            }
+
+            var outPath = System.IO.Path.Combine(
+                ScrubDir(),
+                Math.Abs(path.GetHashCode()).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "_" + frame.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".jpg");
+            if (!System.IO.File.Exists(outPath))
+            {
+                await _ffmpeg.GenerateThumbnailAsync(path, outPath, timeSec);
+            }
+            if (!System.IO.File.Exists(outPath)) return;
+
+            var img = LoadFrameBitmap(outPath);
+            if (img is null) return;
+
+            // 软上限：避免长时间微调把内存缓存撑爆。
+            if (_scrubFrameCache.Count > 240) _scrubFrameCache.Clear();
+            _scrubFrameCache[key] = img;
+
+            // 过期请求不覆盖（用户已经又点了好几下）。
+            if (_scrubToken.TryGetValue(seg.Id, out var cur) && cur == token)
+            {
+                card.ScrubImage = img;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[ScrubDiag] 抽边界帧失败");
+        }
+    }
+
+    private string ScrubDir()
+    {
+        if (_scrubDir is null)
+        {
+            _scrubDir = System.IO.Path.Combine(Utilities.AppPaths.Root, "ScrubCache");
+            System.IO.Directory.CreateDirectory(_scrubDir);
+        }
+        return _scrubDir;
+    }
+
+    private static System.Windows.Media.ImageSource? LoadFrameBitmap(string path)
+    {
+        try
+        {
+            using var stream = System.IO.File.OpenRead(path);
+            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bmp.DecodePixelWidth = 540; // 按显示尺寸解码，省内存（对齐 ThumbnailCache）
+            bmp.StreamSource = stream;
+            bmp.EndInit();
+            bmp.Freeze(); // 冻结后可跨线程安全赋给 UI 绑定
+            return bmp;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     void ISegmentCardHost.RequestDelete(SegmentCardViewModel card)
@@ -294,7 +407,8 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
                         n > 0 ? "已恢复 1 个分镜" : "恢复失败，请重试",
                         n > 0 ? Views.Components.ToastStyle.Success : Views.Components.ToastStyle.Error);
                 }));
-        Views.Components.ToastService.Show("已删除分镜 · Ctrl+Z 撤销", Views.Components.ToastStyle.Warning);
+        Views.Components.ToastService.Show("已删除分镜", Views.Components.ToastStyle.Warning,
+            "撤销", () => Infrastructure.UndoStack.UndoManager.Shared.Undo());
     }
 
     void ISegmentCardHost.ToggleSemanticType(SegmentCardViewModel card, SemanticType type)

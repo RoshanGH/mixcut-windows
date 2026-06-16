@@ -192,7 +192,8 @@ public partial class SegmentLibraryViewV2 : UserControl, IProjectView
                             n > 0 ? Components.ToastStyle.Success : Components.ToastStyle.Error);
                     }));
         }
-        Components.ToastService.Show($"已删除 {count} 个分镜 · Ctrl+Z 撤销", Components.ToastStyle.Warning);
+        Components.ToastService.Show($"已删除 {count} 个分镜", Components.ToastStyle.Warning,
+            "撤销", () => Infrastructure.UndoStack.UndoManager.Shared.Undo());
     }
 
     /// <summary>分镜增删后统一刷新分组/类型 chip/统计/工具栏/空态（删除与撤销恢复共用）。</summary>
@@ -415,67 +416,121 @@ public partial class SegmentLibraryViewV2 : UserControl, IProjectView
 
     private void OnCardMouseEnter(object sender, MouseEventArgs e)
     {
-        if (sender is not FrameworkElement { Tag: SegmentCardViewModel card } root) return;
-        card.IsHovering = true;
-
-        if (!card.IsVideoFileAvailable) return;
-        var videoHost = FindChild<ContentControl>(root, "VideoHost");
-        if (videoHost is null) return;
-        if (videoHost.Content is Components.InlineVideoPlayer) return;
-
-        // UniformToFill：与卡片静态缩略图(Stretch=UniformToFill)一致铺满固定 9:16 框，修「hover 播放不铺满」。
-        var player = new Components.InlineVideoPlayer
-        {
-            AutoPlayOnHover = true,
-            VideoStretch = System.Windows.Media.Stretch.UniformToFill,
-        };
-        player.SetSegment(card.VideoLocalPath!, card.ThumbnailPath, card.StartTime, card.EndTime);
-
-        // 关键：监听 CardVM 时间变化，实时同步给 player。
-        // 用户调 ±0.1s 时 hover 中的 player 立刻反映新片段范围（播放中则重启播放）。
-        PropertyChangedEventHandler handler = (_, args) =>
-        {
-            if (args.PropertyName is nameof(SegmentCardViewModel.StartTime)
-                                  or nameof(SegmentCardViewModel.EndTime))
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (videoHost.Content == player && card.IsVideoFileAvailable)
-                    {
-                        player.SetSegment(card.VideoLocalPath!, card.ThumbnailPath,
-                            card.StartTime, card.EndTime);
-                    }
-                }));
-            }
-        };
-        card.PropertyChanged += handler;
-        _playerHandlers.Add(player, handler);
-
-        videoHost.Content = player;
+        // 全局点击播放：hover 不再创建播放器、不自动播，仅用于卡片悬停高亮。
+        if (sender is FrameworkElement { Tag: SegmentCardViewModel card }) card.IsHovering = true;
     }
 
     private void OnCardMouseLeave(object sender, MouseEventArgs e)
     {
-        if (sender is not FrameworkElement { Tag: SegmentCardViewModel card } root) return;
-        card.IsHovering = false;
+        if (sender is FrameworkElement { Tag: SegmentCardViewModel card }) card.IsHovering = false;
+    }
 
-        var videoHost = FindChild<ContentControl>(root, "VideoHost");
-        if (videoHost?.Content is not Components.InlineVideoPlayer player) return;
+    /// <summary>
+    /// 卡片上始终显示的 ▶ 被点击：在该卡 VideoHost 里创建内联播放器并立即播放（全局点击播放，不依赖 hover）。
+    /// 播放时隐藏 ▶ 与时长角标（控制栏已显示时长）；播完 / 停止 / 被其他卡抢占由 player.Idle 还原。
+    /// </summary>
+    private void OnSegmentPlayClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: SegmentCardViewModel card } playBtn) return;
+        if (!card.IsVideoFileAvailable) return;
 
-        // 解绑 CardVM 监听
+        var thumbGrid = FindAncestorByName(playBtn, "ThumbGrid");
+        if (thumbGrid is null) return;
+        var videoHost = FindChild<ContentControl>(thumbGrid, "VideoHost");
+        if (videoHost is null) return;
+        var badge = FindChild<Border>(thumbGrid, "CardDurationBadge");
+
+        // 已经在播这张卡 → 忽略重复点击，避免重复 Open 抖动。
+        if (videoHost.Content is Components.InlineVideoPlayer { IsPlaying: true })
+        {
+            return;
+        }
+
+        Serilog.Log.Information(
+            "[SegPlayDiag] 点击播放 seq={Seq} startFrame={SF} videoHostHash={H}",
+            card.SequenceNumber, card.Segment.StartFrame, videoHost.GetHashCode());
+
+        if (videoHost.Content is not Components.InlineVideoPlayer player)
+        {
+            player = new Components.InlineVideoPlayer
+            {
+                AutoPlayOnHover = false,
+                VideoStretch = System.Windows.Media.Stretch.UniformToFill,
+            };
+            player.SetSegment(card.VideoLocalPath!, card.ThumbnailPath,
+                card.Segment.StartFrame, card.Segment.EndFrame, card.Segment.EffectiveFps);
+
+            // ±0.1s 微调时实时同步给正在播放的 player。
+            PropertyChangedEventHandler handler = (_, args) =>
+            {
+                if (args.PropertyName is nameof(SegmentCardViewModel.StartTime)
+                                      or nameof(SegmentCardViewModel.EndTime))
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (videoHost.Content == player && card.IsVideoFileAvailable)
+                        {
+                            player.SetSegment(card.VideoLocalPath!, card.ThumbnailPath,
+                                card.Segment.StartFrame, card.Segment.EndFrame, card.Segment.EffectiveFps);
+                        }
+                    }));
+                }
+            };
+            card.PropertyChanged += handler;
+            _playerHandlers.Add(player, handler);
+
+            // 播完 / 停止 / 被其他卡抢占 → 拆掉播放器，还原静态缩略图 + ▶ + 时长角标。
+            player.Idle += (_, _) =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (videoHost.Content == player)
+                    {
+                        TeardownHoverPlayer(videoHost, player, card);
+                    }
+                    playBtn.Visibility = Visibility.Visible;
+                    if (badge is not null) badge.Visibility = Visibility.Visible;
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            };
+
+            videoHost.Content = player;
+        }
+
+        // 隐藏 ▶ 与时长角标（避免与控制栏时长重叠），开始播放。
+        playBtn.Visibility = Visibility.Collapsed;
+        if (badge is not null) badge.Visibility = Visibility.Collapsed;
+        // 用已布局好的 videoHost 尺寸预置解码目标（竖屏框），免去昂贵的同步 UpdateLayout（数十卡 ~150-200ms）。
+        // 刚塞进去的 player 自身 ActualWidth=0，但 videoHost 早已布局、尺寸确定。
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(videoHost);
+        player.PrimeDecodeSize(
+            (int)Math.Round(videoHost.ActualWidth * dpi.DpiScaleX),
+            (int)Math.Round(videoHost.ActualHeight * dpi.DpiScaleY));
+        player.Play();
+    }
+
+    /// <summary>从子元素沿可视树向上查找指定 x:Name 的祖先。</summary>
+    private static FrameworkElement? FindAncestorByName(DependencyObject? d, string name)
+    {
+        while (d is not null)
+        {
+            if (d is FrameworkElement fe && fe.Name == name) return fe;
+            d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+        }
+        return null;
+    }
+
+    /// <summary>拆掉点击创建的内联播放器：解绑时间同步监听 + 从 VideoHost 移除（还原静态缩略图）。</summary>
+    private void TeardownHoverPlayer(ContentControl videoHost, Components.InlineVideoPlayer player, SegmentCardViewModel card)
+    {
         if (_playerHandlers.TryGetValue(player, out var handler))
         {
             card.PropertyChanged -= handler;
             _playerHandlers.Remove(player);
         }
-
-        Dispatcher.BeginInvoke(new Action(() =>
+        if (videoHost.Content == player)
         {
-            if (videoHost.Content == player)
-            {
-                videoHost.Content = null;
-            }
-        }), System.Windows.Threading.DispatcherPriority.Background);
+            videoHost.Content = null;
+        }
     }
 
     // ============ 时间编辑框 commit ============

@@ -11,8 +11,8 @@ namespace MixCut.Services.SceneDetection;
 /// </summary>
 public sealed class SceneDetectionService
 {
-    private static readonly Regex PtsTimeRegex = new(@"pts_time:\s*([\d.]+)", RegexOptions.Compiled);
-    private static readonly Regex SceneScoreRegex = new(@"scene_score=([\d.]+)", RegexOptions.Compiled);
+    private static readonly Regex PtsTimeRegex = new(@"pts_time:\s*([-+\d.eE]+)", RegexOptions.Compiled);
+    private static readonly Regex SceneScoreRegex = new(@"lavfi\.scene_score=([-+\d.eE]+)", RegexOptions.Compiled);
     private static readonly Regex SilenceStartRegex = new(@"silence_start:\s*([\d.]+)", RegexOptions.Compiled);
     private static readonly Regex SilenceEndRegex = new(@"silence_end:\s*([\d.]+)", RegexOptions.Compiled);
 
@@ -32,11 +32,17 @@ public sealed class SceneDetectionService
         var args = new[]
         {
             "-i", videoPath,
-            "-vf", $"select='gt(scene,{threshold.ToString(CultureInfo.InvariantCulture)})',showinfo",
+            "-vf", $"select='gt(scene,{threshold.ToString(CultureInfo.InvariantCulture)})'," +
+                   "metadata=print:key=lavfi.scene_score",
             "-f", "null", "-",
         };
         var stderr = await _ffmpeg.RunForStderrAsync(args, cancellationToken);
-        return ParseSceneBoundaries(stderr);
+        var result = ParseSceneBoundaries(stderr);
+        _logger.LogInformation(
+            "[SceneDiag] count={Count} nonZero={NonZero} maxScore={MaxScore:F4}",
+            result.Count, result.Count(x => x.Confidence > 0),
+            result.Count == 0 ? 0 : result.Max(x => x.Confidence));
+        return result;
     }
 
     /// <summary>使用 FFmpeg silencedetect 检测静音/停顿段。</summary>
@@ -140,31 +146,35 @@ public sealed class SceneDetectionService
 
     // ---- 解析方法 ----
 
-    private static IReadOnlyList<SceneBoundary> ParseSceneBoundaries(string output)
+    internal static IReadOnlyList<SceneBoundary> ParseSceneBoundaries(string output)
     {
         var boundaries = new List<SceneBoundary>();
+        double? pendingTime = null;
         foreach (var line in output.Split('\n'))
         {
-            if (!line.Contains("showinfo", StringComparison.Ordinal))
+            if (!line.Contains("Parsed_metadata", StringComparison.Ordinal)
+                && !line.Contains("lavfi.scene_score", StringComparison.Ordinal))
             {
                 continue;
             }
 
             var timeMatch = PtsTimeRegex.Match(line);
-            if (!timeMatch.Success
-                || !double.TryParse(timeMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var time))
+            if (timeMatch.Success
+                && double.TryParse(timeMatch.Groups[1].Value, NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out var time))
             {
-                continue;
+                pendingTime = time;
             }
 
-            var confidence = 0.5;
             var scoreMatch = SceneScoreRegex.Match(line);
             if (scoreMatch.Success
-                && double.TryParse(scoreMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var score))
+                && pendingTime is { } pts
+                && double.TryParse(scoreMatch.Groups[1].Value, NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out var score))
             {
-                confidence = score;
+                boundaries.Add(new SceneBoundary(pts, score));
+                pendingTime = null;
             }
-            boundaries.Add(new SceneBoundary(time, confidence));
         }
         return boundaries.OrderBy(b => b.Time).ToList();
     }

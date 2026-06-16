@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MixCut.Infrastructure;
 using MixCut.Services.VideoProcessing;
+using MixCut.Utilities;
 using NAudio.Wave;
 
 namespace MixCut.Views.Components;
@@ -41,11 +42,13 @@ public class FfmpegFramePlayer : Image
     // ActualWidth 恒为 0，UpdateLayout 也救不回（已实证）。0 表示未设，回退到本控件 ActualWidth。
     // Seek 重启时不传尺寸即复用这里记忆的值。
     private int _targetW, _targetH;
-    private readonly int _fps = 30;
+    private double _fps = 30;
     private string? _path;
     private double _clipStart;     // 片段在源文件中的起点（秒）
     private double _clipEndAbs;     // 片段在源文件中的终点（绝对秒）；<=0 表示播到 EOF（完整视频）
     private double _positionSec;    // 当前绝对位置（源文件时间，秒）= _clipStart + 已播
+    private int? _clipStartFrame;
+    private int? _clipEndFrame;
 
     /// <summary>首帧就绪（对应 MediaElement.MediaOpened）。</summary>
     public event EventHandler? Opened;
@@ -81,7 +84,9 @@ public class FfmpegFramePlayer : Image
     /// 自身的 ActualWidth 在刚 Collapsed→Visible 时为 0 不可靠（小图/黑屏根因）。0=不更新，复用上次值，
     /// 仍为 0 才回退本控件 ActualWidth。Seek 重启不传即复用记忆值。
     /// </summary>
-    public void Open(string path, double start, double dur, int targetW = 0, int targetH = 0)
+    public void Open(
+        string path, double start, double dur, int targetW = 0, int targetH = 0,
+        int startFrame = -1, int endFrame = -1, double sourceFps = 0)
     {
         Stop();
         if (string.IsNullOrEmpty(path) || !File.Exists(path) || !BundledBinaries.FfmpegAvailable)
@@ -111,6 +116,9 @@ public class FfmpegFramePlayer : Image
         _path = path;
         _clipStart = start;
         _clipEndAbs = dur > 0 ? start + dur : 0;
+        _clipStartFrame = startFrame >= 0 && endFrame > startFrame ? startFrame : null;
+        _clipEndFrame = _clipStartFrame is not null ? endFrame : null;
+        _fps = sourceFps > 0 ? sourceFps : 30;
         _positionSec = start;
         _stop = false;
         _paused = false;
@@ -125,7 +133,12 @@ public class FfmpegFramePlayer : Image
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
-            foreach (var a in FramePipeArgs.Video(path, start, dur <= 0 ? 36000 : dur, _w, _h, _fps))
+            // 统一用输入级快速 seek（-ss 放 -i 前）：start/dur 已是分镜帧换算好的秒数。
+            // 旧分镜路径用 trim 滤镜从第 0 帧解码丢弃到 start_frame，越靠后的分镜白解码越多帧、越慢
+            // （用户报「点击要等 1s 才播」的真因）。输入级 seek 直接跳关键帧，本地文件近乎秒开。
+            var videoArgs = FramePipeArgs.Video(path, start, dur <= 0 ? 36000 : dur, _w, _h,
+                FrameTime.NominalFps(_fps));
+            foreach (var a in videoArgs)
             {
                 psi.ArgumentList.Add(a);
             }
@@ -243,8 +256,18 @@ public class FfmpegFramePlayer : Image
         {
             return;
         }
+        if (_clipStartFrame is not null && _clipEndFrame is { } endFrame && _fps > 0)
+        {
+            var seekFrame = Math.Clamp(FrameTime.SecondsToFrame(absSec, _fps),
+                _clipStartFrame.Value, Math.Max(_clipStartFrame.Value, endFrame - 1));
+            Open(_path, FrameTime.FrameToSeconds(seekFrame, _fps),
+                FrameTime.FrameToSeconds(endFrame - seekFrame, _fps),
+                startFrame: seekFrame, endFrame: endFrame, sourceFps: _fps);
+            return;
+        }
+
         var dur = _clipEndAbs > 0 ? Math.Max(0.1, _clipEndAbs - absSec) : 0;
-        Open(_path, absSec, dur);
+        Open(_path, absSec, dur, sourceFps: _fps);
     }
 
     /// <summary>后台读帧循环：按定长切帧、暂停感知墙钟节流、UI 线程 WritePixels。</summary>
@@ -252,10 +275,15 @@ public class FfmpegFramePlayer : Image
     {
         var frameBytes = FramePipeArgs.FrameBytes(_w, _h);
         var stream = proc.StandardOutput.BaseStream;
-        var sw = Stopwatch.StartNew();
+        // 墙钟节流的零点：**等首帧真正落地才起算**。ffmpeg 冷启动（进程拉起 + 打开文件 + seek +
+        // 解出首帧）要 300~800ms，若在这之前就 StartNew，等首帧到达时墙钟已走了几百毫秒，前十几帧
+        // 的节流 delay 全是负数 → 不睡眠 → 一口气快放追赶 = 用户看到的「第一秒明显加速」。
+        // 改为首帧落地才 StartNew，节流以「首帧呈现」为 t=0，彻底消除开播加速。
+        Stopwatch? sw = null;
         double pausedAccumMs = 0;
         long frameIndex = 0;
         var opened = false;
+        var coldSw = Stopwatch.StartNew(); // 测「点击→首帧」冷启动延迟，自验证用
 
         try
         {
@@ -264,12 +292,15 @@ public class FfmpegFramePlayer : Image
                 // 暂停：停读 → ffmpeg 背压阻塞；记录暂停时长以校正节流
                 if (_paused)
                 {
-                    var pStart = sw.Elapsed.TotalMilliseconds;
+                    var pStart = sw?.Elapsed.TotalMilliseconds ?? 0;
                     while (_paused && !_stop)
                     {
                         Thread.Sleep(20);
                     }
-                    pausedAccumMs += sw.Elapsed.TotalMilliseconds - pStart;
+                    if (sw is not null)
+                    {
+                        pausedAccumMs += sw.Elapsed.TotalMilliseconds - pStart;
+                    }
                 }
                 if (_stop)
                 {
@@ -281,6 +312,9 @@ public class FfmpegFramePlayer : Image
                 {
                     break; // EOF / 不足一帧 → 正常结束
                 }
+
+                // 首帧落地：此刻才起算墙钟（见上方说明）。
+                sw ??= Stopwatch.StartNew();
 
                 // 墙钟节流（扣除暂停时长）：第 N 帧应在 N/fps 秒呈现
                 var targetMs = frameIndex * 1000.0 / _fps;
@@ -296,7 +330,7 @@ public class FfmpegFramePlayer : Image
 
                 var absSec = _clipStart + frameIndex / (double)_fps;
                 var first = !opened;
-                Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
+                Dispatcher.Invoke(DispatcherPriority.Render, () =>
                 {
                     if (_stop || _bmp is null)
                     {
@@ -307,6 +341,7 @@ public class FfmpegFramePlayer : Image
                     FramesRendered++;
                     if (first)
                     {
+                        Serilog.Log.Information("[InlinePlayDiag] 首帧延迟 {Ms}ms (点击→首帧)", coldSw.ElapsedMilliseconds);
                         Opened?.Invoke(this, EventArgs.Empty);
                     }
                 });
@@ -316,7 +351,8 @@ public class FfmpegFramePlayer : Image
 
             if (!_stop)
             {
-                Dispatcher.BeginInvoke(() => Ended?.Invoke(this, EventArgs.Empty));
+                Dispatcher.BeginInvoke(DispatcherPriority.Background,
+                    () => Ended?.Invoke(this, EventArgs.Empty));
             }
         }
         catch (Exception ex)
@@ -350,7 +386,9 @@ public class FfmpegFramePlayer : Image
         }
         var reader = _reader;
         _reader = null;
-        if (reader is not null && reader.IsAlive && reader.ManagedThreadId != Environment.CurrentManagedThreadId)
+        if (reader is not null && reader.IsAlive
+            && reader.ManagedThreadId != Environment.CurrentManagedThreadId
+            && !Dispatcher.CheckAccess())
         {
             reader.Join(TimeSpan.FromMilliseconds(500));
         }

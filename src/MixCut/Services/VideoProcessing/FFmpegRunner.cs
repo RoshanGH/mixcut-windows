@@ -5,8 +5,18 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using MixCut.Infrastructure;
+using MixCut.Utilities;
 
 namespace MixCut.Services.VideoProcessing;
+
+/// <summary>以帧为真值的视频片段。StartFrame inclusive，EndFrame exclusive。</summary>
+public sealed record FrameClip(string Path, int StartFrame, int EndFrame, double Fps)
+{
+    public int FrameCount => Math.Max(0, EndFrame - StartFrame);
+    public double StartSeconds => FrameTime.FrameToSeconds(StartFrame, Fps);
+    public double EndSeconds => FrameTime.FrameToSeconds(EndFrame, Fps);
+    public double Duration => FrameTime.FrameToSeconds(FrameCount, Fps);
+}
 
 /// <summary>
 /// FFmpeg / ffprobe 命令执行封装。对应 macOS 版 FFmpegRunner（actor）。
@@ -344,6 +354,85 @@ public sealed class FFmpegRunner
         await RunAsync(args, cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// 按整数帧精确切割。视频使用 trim=start_frame/end_frame，音频使用同一帧边界派生的秒数。
+    /// </summary>
+    public async Task CutSegmentFramesAsync(
+        FrameClip clip, string outputPath, CancellationToken cancellationToken = default)
+    {
+        if (clip.Fps <= 0 || clip.EndFrame <= clip.StartFrame)
+        {
+            throw FFmpegException.ExecutionFailed(-1, "分镜帧区间无效");
+        }
+
+        var actualDuration = await ProbeDurationAsync(clip.Path, cancellationToken);
+        var maxFrame = actualDuration > 0
+            ? FrameTime.SecondsToFrame(actualDuration, clip.Fps)
+            : clip.EndFrame;
+        var startFrame = Math.Clamp(clip.StartFrame, 0, Math.Max(0, maxFrame - 1));
+        var endFrame = Math.Clamp(clip.EndFrame, startFrame + 1, Math.Max(startFrame + 1, maxFrame));
+        var startSeconds = FrameTime.FrameToSeconds(startFrame, clip.Fps);
+        var endSeconds = FrameTime.FrameToSeconds(endFrame, clip.Fps);
+
+        Serilog.Log.Information(
+            "[FrameCutDiag] file={File} startFrame={StartFrame} endFrame={EndFrame} lastFrame={LastFrame} fps={Fps:F3}",
+            Path.GetFileName(clip.Path), startFrame, endFrame, endFrame - 1, clip.Fps);
+
+        var hasAudio = await ProbeHasAudioAsync(clip.Path, cancellationToken);
+
+        List<string> BuildArgs(string codec, bool hardware)
+        {
+            var args = new List<string>
+            {
+                "-i", clip.Path,
+                "-vf", $"trim=start_frame={startFrame}:end_frame={endFrame},setpts=PTS-STARTPTS",
+                "-c:v", codec,
+            };
+            if (hasAudio)
+            {
+                args.AddRange(new[]
+                {
+                    "-af", $"atrim=start={Fmt(startSeconds)}:end={Fmt(endSeconds)},asetpts=PTS-STARTPTS",
+                });
+            }
+            if (hardware)
+            {
+                args.AddRange(new[] { "-b:v", "8000k", "-maxrate", "16000k", "-tag:v", "avc1" });
+            }
+            else
+            {
+                args.AddRange(new[] { "-crf", "20", "-preset", "fast" });
+            }
+            args.AddRange(new[] { "-pix_fmt", "yuv420p" });
+            if (hasAudio)
+            {
+                args.AddRange(new[] { "-c:a", "aac", "-b:a", "192k" });
+            }
+            args.AddRange(new[] { "-movflags", "+faststart", "-y", outputPath });
+            return args;
+        }
+
+        var hardwareCodec = HardwareEncoderProbe.H264Hardware;
+        try
+        {
+            await RunAsync(
+                BuildArgs(hardwareCodec ?? "libx264", hardwareCodec is not null),
+                clip.Duration, cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (hardwareCodec is not null)
+        {
+            _logger.LogWarning(ex,
+                "[FrameCutFallback] 硬件编码失败，降级 CPU 重试 file={File}", clip.Path);
+            await RunAsync(
+                BuildArgs("libx264", hardware: false),
+                clip.Duration, cancellationToken: cancellationToken);
+        }
+    }
+
     /// <summary>生成视频缩略图。</summary>
     public Task GenerateThumbnailAsync(
         string videoPath, string outputPath, double time = 1.0,
@@ -409,7 +498,7 @@ public sealed class FFmpegRunner
     /// 对应 macOS 版 concat()。
     /// </summary>
     public async Task ConcatAsync(
-        IReadOnlyList<(string Path, double Start, double End)> segments,
+        IReadOnlyList<FrameClip> segments,
         string outputPath,
         string? resolution = null,
         int crf = 18,
@@ -433,10 +522,10 @@ public sealed class FFmpegRunner
 
         var args = new List<string>();
 
-        // 所有视频输入（精确裁切用 -ss/-to）。
+        // 每个片段作为独立输入，真正裁切在 filter_complex 中按帧执行。
         foreach (var seg in segments)
         {
-            args.AddRange(new[] { "-ss", Fmt(seg.Start), "-to", Fmt(seg.End), "-i", seg.Path });
+            args.AddRange(new[] { "-i", seg.Path });
         }
 
         // 沉默音频生成器（索引 = segments.Count），替代无音轨片段。
@@ -454,15 +543,20 @@ public sealed class FFmpegRunner
             //  ② h264_nvenc 不支持 10-bit，喂 yuv420p10le 直接 0xC0000005 崩溃 (exit -1073741819)。
             //  统一降到 8-bit 4:2:0，nvenc/qsv/amf/libx264 全部支持。构建机(QSV+8bit 素材)测不出此坑。
             filterParts.Add(
-                $"[{i}:v]scale={targetScale}:force_original_aspect_ratio=decrease," +
+                $"[{i}:v]trim=start_frame={segments[i].StartFrame}:end_frame={segments[i].EndFrame}," +
+                "setpts=PTS-STARTPTS," +
+                $"scale={targetScale}:force_original_aspect_ratio=decrease," +
                 $"pad={targetScale}:(ow-iw)/2:(oh-ih)/2:black," +
                 $"setsar=1,fps=30,format=yuv420p[v{i}]");
 
-            var durStr = (segments[i].End - segments[i].Start).ToString("F6", CultureInfo.InvariantCulture);
+            var startStr = segments[i].StartSeconds.ToString("F9", CultureInfo.InvariantCulture);
+            var endStr = segments[i].EndSeconds.ToString("F9", CultureInfo.InvariantCulture);
+            var durStr = segments[i].Duration.ToString("F9", CultureInfo.InvariantCulture);
             if (hasAudio[i])
             {
                 filterParts.Add(
-                    $"[{i}:a]aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11,apad=whole_dur={durStr}[a{i}]");
+                    $"[{i}:a]atrim=start={startStr}:end={endStr},asetpts=PTS-STARTPTS," +
+                    $"aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11,apad=whole_dur={durStr}[a{i}]");
             }
             else
             {
@@ -510,7 +604,7 @@ public sealed class FFmpegRunner
         args.AddRange(new[] { "-movflags", "+faststart" });
         args.AddRange(new[] { "-y", outputPath });
 
-        var totalDuration = segments.Sum(s => s.End - s.Start);
+        var totalDuration = segments.Sum(s => s.Duration);
         await RunAsync(args, totalDuration, onProgress, cancellationToken);
     }
 

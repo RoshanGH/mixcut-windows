@@ -9,6 +9,7 @@
         <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Typography.xaml" />
         <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Spacing.xaml" />
         <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Styles.xaml" />
+        <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Controls.xaml" />
         <ResourceDictionary Source="pack://application:,,,/MixCut;component/Resources/Theme/Converters.xaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

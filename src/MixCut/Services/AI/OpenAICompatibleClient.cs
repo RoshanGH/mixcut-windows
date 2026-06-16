@@ -67,22 +67,46 @@ public sealed class OpenAICompatibleClient : IAiProvider
     public async Task<T> GenerateJsonAsync<T>(string prompt, CancellationToken cancellationToken = default)
     {
         var text = await SendRequestAsync(prompt, cancellationToken, jsonMode: true);
+        if (TryParseJson<T>(text, out var first, out _))
+        {
+            return first!;
+        }
+
+        // 自动重试一次：上一次没吐合法 JSON，追加更强硬的「只输出 JSON」指令再请求一次。
+        // 多数 OpenAI 兼容模型只是偶发把 prompt 当对话回复，二次强约束往往能纠正 —— 比直接判失败、
+        // 让用户手动重试体验好得多（对齐 §最高原则：每个 >1s 的失败都要有兜底，而非把锅甩给用户）。
+        _logger.LogWarning("AI 首次未按 JSON 返回，追加强约束指令自动重试一次…");
+        var retryText = await SendRequestAsync(prompt + StrictJsonRetrySuffix, cancellationToken, jsonMode: true);
+        if (TryParseJson<T>(retryText, out var second, out var retryJson))
+        {
+            _logger.LogInformation("AI 二次强约束重试解析成功。");
+            return second!;
+        }
+
+        // 两次都失败：完整转储 + 详细日志 + 完整人话错误（展示模型实际返回内容，便于用户判断换哪个模型）。
+        DumpFailedJson(retryJson);
+        _logger.LogError("JSON 解析失败（两次请求 + 三层修复均失败），完整响应见 logs/ai-fail/。");
+        _logger.LogError("原始响应前 800 字符: {Json}", Truncate(retryJson, 800));
+        throw AIProviderException.JsonParsingFailed(BuildJsonParseErrorDetail(retryJson));
+    }
+
+    /// <summary>
+    /// 三层 JSON 解析防御（直接解 → 截断修复 → 错误位置救援），全部失败返回 false。
+    /// 抽成独立方法以便「自动重试一次」复用同一套解析逻辑。<paramref name="jsonStr"/> 输出清洗后的
+    /// JSON 文本，供失败时转储/报错使用。
+    /// </summary>
+    private bool TryParseJson<T>(string text, out T? result, out string jsonStr)
+    {
         // 预清洗：移除 ASCII 控制字符 + BOM，避免 MiniMax 等模型的 JSON 污染。
-        var jsonStr = JsonTruncationRepair.Sanitize(ExtractJson(text));
+        jsonStr = JsonTruncationRepair.Sanitize(ExtractJson(text));
 
         // 第一次：直接解。
         try
         {
-            var result = JsonSerializer.Deserialize<T>(jsonStr, JsonOptions);
-            if (result is not null)
-            {
-                return result;
-            }
+            var r = JsonSerializer.Deserialize<T>(jsonStr, JsonOptions);
+            if (r is not null) { result = r; return true; }
         }
-        catch (JsonException)
-        {
-            // 落到下面的修复尝试
-        }
+        catch (JsonException) { /* 落到下面的修复尝试 */ }
 
         // 第二次：尝试 JsonTruncationRepair 修复后再解（救回被 max_tokens 截断的对象/数组）。
         var repaired = JsonTruncationRepair.Repair(jsonStr);
@@ -90,18 +114,15 @@ public sealed class OpenAICompatibleClient : IAiProvider
         {
             try
             {
-                var result = JsonSerializer.Deserialize<T>(repaired, JsonOptions);
-                if (result is not null)
+                var r = JsonSerializer.Deserialize<T>(repaired, JsonOptions);
+                if (r is not null)
                 {
                     _logger.LogInformation("JSON 截断修复成功：原长 {Orig} → 修复后 {New}",
                         jsonStr.Length, repaired.Length);
-                    return result;
+                    result = r; return true;
                 }
             }
-            catch (JsonException)
-            {
-                // 落到第三次救援
-            }
+            catch (JsonException) { /* 落到第三次救援 */ }
         }
 
         // 第三次：用 JsonException 拿到精确错误位置，截到错误前最后一个完整 `},` 再修复重试。
@@ -111,28 +132,38 @@ public sealed class OpenAICompatibleClient : IAiProvider
         {
             try
             {
-                var result = JsonSerializer.Deserialize<T>(rescued, JsonOptions);
-                if (result is not null)
+                var r = JsonSerializer.Deserialize<T>(rescued, JsonOptions);
+                if (r is not null)
                 {
                     _logger.LogInformation("JSON 错误位置救援成功：原长 {Orig} → 救援后 {New}",
                         jsonStr.Length, rescued.Length);
-                    return result;
+                    result = r; return true;
                 }
             }
-            catch (JsonException)
-            {
-                // 落到最终错误
-            }
+            catch (JsonException) { /* 落到最终错误 */ }
         }
 
-        // 仍然失败：把完整 JSON 转储到独立文件方便事后诊断 + 详细日志 + 用户可读错误。
-        DumpFailedJson(jsonStr);
-        _logger.LogError("JSON 解析失败（直接解 + 截断修复 + 错误位置救援 均失败）");
-        _logger.LogError("原始响应前 500 字符: {Json}", Truncate(jsonStr, 500));
-        var snippet = Truncate(jsonStr.Trim(), 80).Replace("\n", " ");
-        throw AIProviderException.JsonParsingFailed(
-            $"AI 没按 JSON 格式返回。实际响应开头：「{snippet}」。" +
-            "可能模型把 prompt 当对话回复了 —— 试试换更大的模型（如 DeepSeek-V4-Pro 或 Claude Sonnet）");
+        result = default;
+        return false;
+    }
+
+    /// <summary>二次重试时追加到 prompt 末尾的强约束指令（比常驻 system prompt 更直白、点名上次失败）。</summary>
+    private const string StrictJsonRetrySuffix =
+        "\n\n【严格要求·重要】你上一次的输出无法被 JSON 解析器解析。本次回复必须【只】包含一个合法的 JSON 值"
+        + "（对象 {} 或数组 []），禁止任何前言/后语/解释/markdown 代码围栏(```)/注释。"
+        + "整段回复要能被 JSON.parse 直接解析，否则视为失败。";
+
+    /// <summary>构造给用户看的「AI 没按 JSON 返回」人话错误：展示模型实际返回开头，引导换模型，不暴露原始报错码。</summary>
+    private static string BuildJsonParseErrorDetail(string jsonStr)
+    {
+        if (string.IsNullOrWhiteSpace(jsonStr))
+        {
+            return "AI 返回了空内容（可能被服务端安全策略拦截或账号额度不足）。请稍后重试，或在「设置」里更换模型。";
+        }
+        var snippet = Truncate(jsonStr.Trim().Replace("\r", " ").Replace("\n", " "), 200);
+        return $"AI 没有按要求返回 JSON（已自动重试一次仍失败）。它实际返回的开头是：「{snippet}」。"
+             + "通常是该模型不擅长结构化输出 —— 建议在「设置」里换一个更强的模型"
+             + "（如 DeepSeek / Claude Sonnet / Qwen-Max）后重试。完整响应已保存到日志备查。";
     }
 
     /// <summary>
@@ -281,7 +312,14 @@ public sealed class OpenAICompatibleClient : IAiProvider
                     // QW-14：某些 API 网关的错误响应体会回显 Authorization header（含 Bearer token）。
                     // 写日志 / 抛给上层前先脱敏，避免密钥泄漏到日志文件或冒泡到用户可见的错误信息。
                     _logger.LogError("HTTP {Code}: {Body}", code, Redact(Truncate(data, 500)));
-                    // 4xx（429 已在上面单独处理）是确定性客户端错误（模型名/接口地址/参数配置错），
+                    // HTTP 402 Payment Required = 账户余额不足。协议语义明确，必须单独翻译成「去充值」，
+                    // 不能混进笼统的「检查配置」里。部分网关把余额不足塞进 400/403 响应体（如 DeepSeek
+                    // 的 "Insufficient Balance"），所以同时按响应体文本兜底识别。
+                    if (code == 402 || data.Contains("insufficient balance", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw AIProviderException.InsufficientBalance();
+                    }
+                    // 其余 4xx（429 已在上面单独处理）是确定性客户端错误（模型名/接口地址/参数配置错），
                     // 重试 3 次也是同样结果 → 立即抛不可重试异常，避免用户配错后干等 ~14s 指数退避。
                     if (code is >= 400 and < 500)
                     {
@@ -296,7 +334,9 @@ public sealed class OpenAICompatibleClient : IAiProvider
             catch (AIProviderException ex)
             {
                 lastError = ex;
-                if (ex.Kind is AIProviderErrorKind.ApiKeyNotConfigured or AIProviderErrorKind.ClientError)
+                if (ex.Kind is AIProviderErrorKind.ApiKeyNotConfigured
+                    or AIProviderErrorKind.ClientError
+                    or AIProviderErrorKind.InsufficientBalance)
                 {
                     throw;
                 }

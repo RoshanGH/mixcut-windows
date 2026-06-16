@@ -81,6 +81,20 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// 卡片实际显示的预览图：剪映式逐帧微调时优先显示 <see cref="ScrubImage"/>（当前调到的边界帧），
+    /// 否则回退到分镜静态缩略图。
+    /// </summary>
+    public System.Windows.Media.ImageSource? PreviewImage => ScrubImage ?? ThumbnailImage;
+
+    /// <summary>
+    /// 逐帧微调时由 host 抽帧设入的「当前边界帧」画面（调 IN 显示新起始帧、调 OUT 显示新末帧）。
+    /// null 时卡片显示静态缩略图。对齐剪映：拖/点边界时预览实时跟到那一帧。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PreviewImage))]
+    private System.Windows.Media.ImageSource? _scrubImage;
+
     /// <summary>ThumbnailCache 通知某张图加载完成时调用，若路径匹配则刷新 binding。</summary>
     private void OnThumbnailLoaded(string loadedPath)
     {
@@ -88,13 +102,18 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
         {
             // 切到 UI 线程触发 PropertyChanged（event 可能从 ThreadPool 线程触发）
             var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher is null || dispatcher.CheckAccess())
+            void Raise()
             {
                 OnPropertyChanged(nameof(ThumbnailImage));
+                OnPropertyChanged(nameof(PreviewImage));
+            }
+            if (dispatcher is null || dispatcher.CheckAccess())
+            {
+                Raise();
             }
             else
             {
-                dispatcher.BeginInvoke(new Action(() => OnPropertyChanged(nameof(ThumbnailImage))));
+                dispatcher.BeginInvoke(new Action(Raise));
             }
         }
     }
@@ -117,11 +136,17 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DurationDisplay))]
     [NotifyPropertyChangedFor(nameof(Duration))]
+    [NotifyPropertyChangedFor(nameof(StartTimecode))]
+    [NotifyPropertyChangedFor(nameof(TimeRangeDisplay))]
+    [NotifyPropertyChangedFor(nameof(LastFrameTimecode))]
     private double _startTime;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DurationDisplay))]
     [NotifyPropertyChangedFor(nameof(Duration))]
+    [NotifyPropertyChangedFor(nameof(EndTimecode))]
+    [NotifyPropertyChangedFor(nameof(TimeRangeDisplay))]
+    [NotifyPropertyChangedFor(nameof(LastFrameTimecode))]
     private double _endTime;
 
     [ObservableProperty]
@@ -187,6 +212,24 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
     public string DurationDisplay =>
         Duration.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "s";
 
+    /// <summary>起点剪映式时间码（时:分:秒:帧，按 fps 进位）。issue #7。</summary>
+    public string StartTimecode =>
+        _segment.StartTimecode;
+
+    /// <summary>终点剪映式时间码。</summary>
+    public string EndTimecode =>
+        _segment.EndTimecode;
+
+    /// <summary>"起 - 止" 时间码区间显示。</summary>
+    public string TimeRangeDisplay => $"{StartTimecode} - {EndTimecode}";
+
+    public string LastFrameTimecode => _segment.LastFrameTimecode;
+
+    public string FrameRateDisplay =>
+        _segment.EffectiveFps > 0
+            ? $"{_segment.EffectiveFps:0.###} fps"
+            : "帧率未知";
+
     public int TranscriptCharCount => TranscriptText?.Length ?? 0;
 
     public bool HasTranscript => !string.IsNullOrWhiteSpace(TranscriptText);
@@ -196,16 +239,29 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void AdjustStart(string? stepStr)
     {
-        var step = ParseStep(stepStr, 0.1);
         // 通过 host 走 V1 的 AdjustStartTime 路径（含 ReExtractText 重新提取台词 + Save）
-        _host.AdjustStartTime(this, step);
+        _host.AdjustStartTime(this, FrameStep(stepStr));
     }
 
     [RelayCommand]
     private void AdjustEnd(string? stepStr)
     {
-        var step = ParseStep(stepStr, 0.1);
-        _host.AdjustEndTime(this, step);
+        _host.AdjustEndTime(this, FrameStep(stepStr));
+    }
+
+    /// <summary>
+    /// issue #7 逐帧微调：取 stepStr 的<b>方向</b>，步长固定为 1 帧（1/fps）。
+    /// fps 未知（旧数据未回填）时退化为原步长（默认 ±0.1s）。
+    /// </summary>
+    private double FrameStep(string? stepStr)
+    {
+        var raw = ParseStep(stepStr, 0.1);
+        var fps = _segment.EffectiveFps;
+        if (fps <= 0)
+        {
+            return raw;
+        }
+        return (raw < 0 ? -1.0 : 1.0) / fps;
     }
 
     [RelayCommand]

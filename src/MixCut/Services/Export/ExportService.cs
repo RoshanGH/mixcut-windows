@@ -20,7 +20,7 @@ public readonly record struct ExportProgress(ExportPhase Phase, double Progress,
 
 /// <summary>导出任务的输入数据。对应 macOS 版 ExportInput。</summary>
 public sealed record ExportInput(
-    IReadOnlyList<(string Path, double Start, double End)> Segments,
+    IReadOnlyList<FrameClip> Segments,
     int MaxWidth,
     int MaxHeight,
     int SkippedCount = 0)
@@ -34,7 +34,7 @@ public sealed record ExportInput(
             return null;
         }
 
-        var segments = new List<(string Path, double Start, double End)>();
+        var segments = new List<FrameClip>();
         var skipped = 0;
         var maxWidth = 0;
         var maxHeight = 0;
@@ -47,7 +47,9 @@ public sealed record ExportInput(
                 skipped++; // 源文件丢失的分镜：统计后由调用方告知用户，不静默少导出
                 continue;
             }
-            segments.Add((video.LocalPath, segment.StartTime, segment.EndTime));
+            segments.Add(new FrameClip(
+                video.LocalPath, segment.StartFrame, segment.EndFrame,
+                segment.EffectiveFps > 0 ? segment.EffectiveFps : 30));
             maxWidth = Math.Max(maxWidth, video.Width);
             maxHeight = Math.Max(maxHeight, video.Height);
         }

@@ -102,14 +102,55 @@ public class BoundaryOptimizerServiceTests
     }
 
     [Fact]
+    public void Optimize_StrongSceneWinsOverCloserSentenceAndSilence()
+    {
+        var svc = new BoundaryOptimizerService();
+        var scenes = new[] { new SceneBoundary(5.4, 0.8) };
+        var silences = new[] { new SilencePeriod(5.05, 5.15) };
+
+        var (boundaries, _) = svc.Optimize(
+            new[] { 5.0 },
+            new[] { Sentence(5.1) },
+            Analysis(duration: 10, scenes: scenes, silences: silences));
+
+        Assert.Equal(5.4, boundaries[0], precision: 3);
+    }
+
+    [Fact]
+    public void Optimize_WeakSceneDoesNotBeatSentence()
+    {
+        var svc = new BoundaryOptimizerService();
+        var scenes = new[] { new SceneBoundary(5.2, 0.1) };
+
+        var (boundaries, _) = svc.Optimize(
+            new[] { 5.0 },
+            new[] { Sentence(5.1) },
+            Analysis(duration: 10, scenes: scenes));
+
+        Assert.Equal(5.1, boundaries[0], precision: 3);
+    }
+
+    [Fact]
+    public void Optimize_QuantizesEveryBoundaryToFrameGrid()
+    {
+        var svc = new BoundaryOptimizerService();
+        var (boundaries, _) = svc.Optimize(
+            new[] { 3.512 },
+            Array.Empty<TranscriptionSentence>(),
+            Analysis(duration: 10));
+
+        Assert.Equal(3.5, boundaries[0], precision: 9);
+    }
+
+    [Fact]
     public void Optimize_ClampsWithinVideoDuration()
     {
         var svc = new BoundaryOptimizerService();
-        // 越界输入（含 > duration 与 < 0）→ 输出全部 clamp 进 [0.01, duration-0.01]
+        // 越界输入（含 > duration 与 < 0）→ 最后一个结束边界允许等于视频总帧。
         var (boundaries, _) = svc.Optimize(
             new[] { -5.0, 3.0, 999.0 }, Array.Empty<TranscriptionSentence>(), Analysis(duration: 10));
 
-        Assert.All(boundaries, b => Assert.InRange(b, 0.01, 9.99));
+        Assert.All(boundaries, b => Assert.InRange(b, 0.01, 10.0));
     }
 
     [Fact]

@@ -14,6 +14,21 @@ public class Segment
     public double StartTime { get; set; }
     public double EndTime { get; set; }
 
+    /// <summary>
+    /// 起始帧号。issue #7：帧是离散最小单位，作为边界<b>真值</b>；StartTime = StartFrame/Fps 为派生缓存。
+    /// 0 表示旧数据尚未回填帧号（启动迁移会按视频 fps 回填）。
+    /// </summary>
+    public int StartFrame { get; set; }
+
+    /// <summary>结束帧号。见 <see cref="StartFrame"/>。</summary>
+    public int EndFrame { get; set; }
+
+    /// <summary>
+    /// 该分镜的帧率（冗余存储，便于不加载 Video 导航属性即可做 帧/秒/时间码 换算）。
+    /// 0 表示未知（回退到 <see cref="Video"/>.Fps）。
+    /// </summary>
+    public double Fps { get; set; }
+
     /// <summary>台词文本。</summary>
     public string Text { get; set; } = string.Empty;
 
@@ -73,5 +88,77 @@ public class Segment
 
     /// <summary>时长（保证非负）。</summary>
     [NotMapped]
-    public double Duration => Math.Max(0, EndTime - StartTime);
+    public double Duration => EffectiveFps > 0
+        ? FrameTime.FrameToSeconds(DurationFrames, EffectiveFps)
+        : Math.Max(0, EndTime - StartTime);
+
+    /// <summary>片段帧数。StartFrame 包含、EndFrame 不包含。</summary>
+    [NotMapped]
+    public int DurationFrames => Math.Max(0, EndFrame - StartFrame);
+
+    /// <summary>预览定格与边界核对使用的最后一帧。</summary>
+    [NotMapped]
+    public int LastFrame => FrameTime.LastIncludedFrame(StartFrame, EndFrame);
+
+    /// <summary>有效帧率：优先用自身 <see cref="Fps"/>，回退到所属视频的 fps。0 表示未知。</summary>
+    [NotMapped]
+    public double EffectiveFps => Fps > 0 ? Fps : (Video?.Fps ?? 0);
+
+    /// <summary>起点剪映式时间码（时:分:秒:帧，按 fps 进位）。fps 未知时退化为 分:秒。</summary>
+    [NotMapped]
+    public string StartTimecode => EffectiveFps > 0
+        ? FrameTime.ToTimecode(StartFrame, EffectiveFps)
+        : FrameTime.ToTimecodeFromSeconds(StartTime, 0);
+
+    /// <summary>终点剪映式时间码。</summary>
+    [NotMapped]
+    public string EndTimecode => EffectiveFps > 0
+        ? FrameTime.ToTimecode(EndFrame, EffectiveFps)
+        : FrameTime.ToTimecodeFromSeconds(EndTime, 0);
+
+    /// <summary>当前片段实际包含的最后一帧时间码。</summary>
+    [NotMapped]
+    public string LastFrameTimecode => FrameTime.ToTimecode(LastFrame, EffectiveFps);
+
+    /// <summary>
+    /// 以「秒」设置边界，<b>量化到最近帧</b>并同步帧号与派生秒（issue #7：消除「落在两帧之间」歧义）。
+    /// fps 来源优先级：显式传入 &gt; 自身 <see cref="Fps"/> &gt; 所属视频。fps 未知时退化为按秒（保证非负）。
+    /// </summary>
+    public void SetBoundsSeconds(double startSec, double endSec, double fps = 0)
+    {
+        var f = fps > 0 ? fps : EffectiveFps;
+        if (f > 0)
+        {
+            Fps = f;
+            StartFrame = FrameTime.SecondsToFrame(startSec, f);
+            EndFrame = FrameTime.SecondsToFrame(endSec, f);
+            StartTime = FrameTime.FrameToSeconds(StartFrame, f);
+            EndTime = FrameTime.FrameToSeconds(EndFrame, f);
+        }
+        else
+        {
+            // fps 未知：退化为按秒存储，不破坏旧行为。
+            StartTime = Math.Max(0, startSec);
+            EndTime = Math.Max(0, endSec);
+        }
+    }
+
+    /// <summary>
+    /// 直接以帧设置边界。StartFrame 为 inclusive，EndFrame 为 exclusive，至少保留一帧。
+    /// 秒字段只是兼容数据库和旧绑定的派生缓存。
+    /// </summary>
+    public void SetBoundsFrames(int startFrame, int endFrame, double fps = 0)
+    {
+        var f = fps > 0 ? fps : EffectiveFps;
+        if (f <= 0)
+        {
+            return;
+        }
+
+        Fps = f;
+        StartFrame = Math.Max(0, startFrame);
+        EndFrame = Math.Max(StartFrame + 1, endFrame);
+        StartTime = FrameTime.FrameToSeconds(StartFrame, f);
+        EndTime = FrameTime.FrameToSeconds(EndFrame, f);
+    }
 }

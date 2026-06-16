@@ -268,6 +268,65 @@ public partial class ImportView : UserControl, IProjectView
     }
 
     /// <summary>
+    /// 一键复制全部台词，带起止时间（ASR 风格），每句一行：
+    /// <c>[0:00.0 - 0:03.4] 文本</c>。优先用 Whisper 原生句子（带 start/end），
+    /// 无原生句子时退化为无时间戳的纯台词行（仍可复制，不阻塞）。对齐 issue #8 / macOS v0.4.0。
+    /// </summary>
+    private void OnCopyAllLyrics(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: VideoRow row })
+        {
+            return;
+        }
+        try
+        {
+            var text = BuildLyricsForCopy(row.Video);
+            if (string.IsNullOrEmpty(text))
+            {
+                Components.ToastService.Show("暂无台词可复制", Components.ToastStyle.Warning);
+                return;
+            }
+            Clipboard.SetText(text);
+            Components.ToastService.Show("全部台词已复制", Components.ToastStyle.Success);
+        }
+        catch (Exception)
+        {
+            // 复制失败不阻塞
+            Components.ToastService.Show("复制失败，请重试", Components.ToastStyle.Warning);
+        }
+    }
+
+    /// <summary>把视频台词拼成带起止时间的 ASR 文本（每句一行）。</summary>
+    private static string BuildLyricsForCopy(Video video)
+    {
+        var asr = video.AsrSentences;
+        if (asr is { Count: > 0 })
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var s in asr)
+            {
+                var t = (s.Text ?? string.Empty).Trim();
+                if (t.Length == 0) continue;
+                sb.Append('[').Append(FormatLyricTime(s.Start))
+                  .Append(" - ").Append(FormatLyricTime(s.End))
+                  .Append("] ").Append(t).Append('\n');
+            }
+            return sb.ToString().TrimEnd('\n');
+        }
+        // 无原生句子：退化为纯台词（无时间戳）
+        return video.Transcript?.Trim() ?? string.Empty;
+    }
+
+    /// <summary>格式化为「分:秒.十分位」，如 0:02.3 / 1:05.8。对齐 macOS 复制格式。</summary>
+    private static string FormatLyricTime(double seconds)
+    {
+        if (seconds < 0) seconds = 0;
+        var mins = (int)(seconds / 60);
+        var secs = seconds - mins * 60;
+        return $"{mins}:{secs.ToString("00.0", System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
+    /// <summary>
     /// DataTemplate 里 InlineVideoPlayer 加载时绑定视频路径。
     /// （UserControl 无法直接 XAML 绑定方法调用，统一在 Loaded 里 SetVideo。）
     /// </summary>
@@ -285,7 +344,8 @@ public partial class ImportView : UserControl, IProjectView
         {
             return;
         }
-        player.SetVideo(row.VideoLocalPath, row.VideoThumbnailPath);
+        // 传入已知总时长（ffprobe 得到，存于 Video.Duration）——整片播放时进度条上限/总时长直接正确。
+        player.SetVideo(row.VideoLocalPath, row.VideoThumbnailPath, row.Video.Duration);
     }
 
     /// <summary>「重做」按钮：仅重新跑 ASR（对齐 Mac retryASR 入口）。</summary>

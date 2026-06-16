@@ -39,8 +39,9 @@ public partial class BatchExportDialog : Window
                 Id: s.Id,
                 SourcePath: s.Video!.LocalPath,
                 SourceVideoName: Path.GetFileNameWithoutExtension(s.Video.Name),
-                StartTime: s.StartTime,
-                EndTime: s.EndTime,
+                StartFrame: s.StartFrame,
+                EndFrame: s.EndFrame,
+                Fps: s.EffectiveFps > 0 ? s.EffectiveFps : 30,
                 SequenceNumber: numberProvider(s)))
             .ToList();
 
@@ -49,7 +50,7 @@ public partial class BatchExportDialog : Window
         // 显示文件列表
         FileListLabel.Text = $"文件列表（{_items.Count} 个）";
         var totalDur = _items.Sum(i => i.Duration);
-        TotalDurationText.Text = $"总时长 {totalDur.ToString("F1", CultureInfo.InvariantCulture)} 秒";
+        TotalDurationText.Text = $"总时长 {Utilities.FrameTime.HumanDuration(totalDur)}";
         FileListItems.ItemsSource = _items.Select(i => new FileListItem(
             FileName: i.FileName,
             DurationText: $"{i.Duration.ToString("F1", CultureInfo.InvariantCulture)}s"))

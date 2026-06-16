@@ -581,3 +581,63 @@ Settings → 系统信息必须显示：
 - `ConcurrencyPolicy.Explain*Formula()` —— 让用户看到「10 路（CPU 7 + GPU 加成 +3，上限 11）」
 
 **永远不要把 token 写进代码 / commit / 长期日志**。
+
+---
+
+## 会话踩坑沉淀（v0.7.x UI / 预览 / 撤销）⚠️⚠️⚠️
+
+本节是 v0.7.x「商业化丝滑」UI/性能打磨 + 四个用户反馈修复期间的教训，承接上一节 §会话踩坑沉淀，下次开新会话先 grep。
+
+### H. 自带 ffmpeg 预览的「丝滑」铁律（v0.7.x 沉淀）
+
+预览统一到自带 ffmpeg 帧泵后（`FfmpegFramePlayer` + `InlineVideoPlayer`），「丝滑」有三条不可破坏的硬规矩：
+
+| 现象 | 根因 | 铁律 |
+|---|---|---|
+| **开播第一秒明显加速 / 快进** | 帧泵墙钟秒表在 ffmpeg 冷启动**之前**就 `StartNew`。ffmpeg 拉起+打开+seek+解首帧要 300~800ms，等首帧到时墙钟已走了几百 ms，前十几帧节流 delay 全为负→不睡→快放追赶 | 墙钟**必须以「首帧落地」为 t=0**（`sw ??= Stopwatch.StartNew()` 放在首帧 ReadFull 成功之后），绝不在开播前起算 |
+| **hover/点击播放前先黑屏** | 播放层（裸帧位图）一显示就盖住缩略图，但首帧还没解出来=纯黑。曾错误假设「裸帧位图首帧前透明、缩略图能透出」（R10），实测仍露黑 | **首帧就绪（`OnMediaOpened`）前不显示播放层**，缩略图（真实 `Image`）一直在，首帧到达再原子切换。不要赌位图透明合成 |
+| **整片播放进度条乱跳 / 总时长显示 0:00** | 整片模式（非分镜）没传已知时长，滑块上限只能「随播放兜底增长」，总时长无从显示 | 整片播放**必须把已知 `Video.Duration` 传进播放器**（`SetVideo(path, thumb, duration)`）；分镜模式用 start/end。兜底增长只能当 fallback，不能当常态 |
+
+> 对应 §兼容性总纲推论 3「同源一致」：预览/缩略图/导出共用自带 ffmpeg。预览既然是自带引擎，就要把流畅度做到剪映级，上面三条是底线。
+
+> **播放交互＝全局点击播放（勿改回 hover 自动播）**：分镜卡片**整张缩略图都是点击区**（不是只有小 ▶ 可点 —— 用户点缩略图别处会以为「点了不播」），居中显示 ▶ 作提示。点击 → 在该卡 `VideoHost` 里懒创建 `InlineVideoPlayer` 并播放；hover 只做卡片高亮、不创建播放器、不自动播。切到另一张时全局唯一播放（`PlaybackStarted` 静态事件）自动停掉上一张并还原其缩略图。hover 自动播放（350ms 触发）会让鼠标划过卡片就乱起停，体感极差，已废弃 —— 勿恢复 `AutoPlayOnHover=true`、勿把播放器创建挪回 `OnCardMouseEnter`。播完 / 停止 / 被抢占由 `InlineVideoPlayer.Idle` 事件拆掉播放器、还原静态缩略图 + ▶。**防抖**：点击时若该卡已在播（`videoHost.Content is InlineVideoPlayer { IsPlaying: true }`）直接 return，避免重复 Open 抖动（自验证 grep `[SegPlayDiag]` 一次点击应只对应一条 `OnPlayClick→Open`）。
+>
+> **懒创建播放器的布局坑**：刚 `new` 出来、刚塞进 `VideoHost` 的播放器尚未布局，`ActualWidth=0` → 帧泵 `FrameTargetPixels` 拿到 0 → 解码目标退化成 240×134 小横帧 → **竖屏分镜整片黑屏**（日志 `Open frame=240x134 target=0x0`）。修法：用已布局好的 `videoHost` 尺寸 `player.PrimeDecodeSize(wPx, hPx)` 预置解码目标（日志应为 `target=315x560` 这类），**不要用同步 `UpdateLayout()`** —— 数十张卡时一次同步全量布局 ~150-200ms，是「点击到出画」的大头延迟。
+>
+> **预览 seek「点了等 1 秒」的真因＝用错 seek 方式**：分镜预览曾用 `trim=start_frame=N` 滤镜定位起点 —— 这是**输出级裁剪：ffmpeg 从第 0 帧开始解码、把起点之前的帧全解出来再丢弃**，越靠后的分镜白解码越多帧（startFrame=1042 的分镜首帧要 ~1s+），而第一个分镜 startFrame=0 无需丢帧所以「秒开」（正是用户「只有第一个能立刻播」的现象）。修法：用**输入级 seek**（`-ss` 放 `-i` 前，跳关键帧），本地文件深分镜首帧 ~530ms。`InlineVideoPlayer` 传给帧泵的 start/dur 已是帧换算的秒数，直接走 `FramePipeArgs.Video` 输入级 seek 即可（导出走 `FFmpegRunner` 另一套帧精确逻辑，不受影响）。
+>
+> **别迷信「减少探测」加速**：实测给预览 ffmpeg 加 `-analyzeduration 0 / 小 -probesize / -fflags +nobuffer` 反而**拖慢** `-ss` 精确 seek（深分镜首帧 ~680ms → ~1950ms），因为削弱流信息探测使 seek 走了更慢路径。已移除，保持默认探测最快。进程级 ffmpeg「每次点击重新拉起」有 ~300ms 固有冷启动，要做到真·秒开需常驻/池化解码器（更大改造）。自验证 grep `首帧延迟`。
+>
+> **剪映式逐帧边界预览**：调分镜 IN/OUT 帧边界（±1 帧）时，卡片预览实时跟到「当前调到的那一帧」—— 调 IN 显示新起始帧、调 OUT 显示新末帧（EndFrame 不含，末画面是 `FrameTime.LastIncludedFrame`）。实现：`SegmentCardViewModel.ScrubImage`（+ 计算属性 `PreviewImage = ScrubImage ?? ThumbnailImage`，卡片画面绑 `PreviewImage`）；host `ShowBoundaryFrame` 用 `FFmpegRunner.GenerateThumbnailAsync`（`-ss` 输入级 seek 抽单帧、与缩略图同源）抽边界帧设入 `ScrubImage`，带内存缓存（key=路径|帧号，来回微调瞬时命中）+ 每卡递增 token「最新优先」（连点不被旧帧覆盖）。抽帧文件落 `%APPDATA%\MixCut\ScrubCache\`。自验证 grep `[ScrubDiag]`。
+
+### I. 覆盖层 Toast / 浮层的命中测试陷阱（v0.7.x 沉淀）
+
+商业 ToC 软件的「撤销」必须**可见可点**（toast 上的「撤销」按钮），不能只靠 Ctrl+Z —— 用户发现不了、记不住（对齐 Mac 的一键撤销 toast）。实现时踩的坑：
+
+- **父级 `IsHitTestVisible=False` 会让所有子元素都点不到**。`MainWindow.xaml` 的 `ToastHost` 跨窗口浮层曾设 `IsHitTestVisible="False"`（图省事「不拦点击」），结果 toast 上的撤销按钮一起点不到，点击穿透到背后的卡片（还误触发卡片播放）。
+- 正确姿势：浮层容器 `IsHitTestVisible="True"` + **无 `Background`**（`Grid` 默认 `null`，空白区不参与命中测试，点击照常穿透下层 UI）；只有**带背景且自身 `IsHitTestVisible=true`** 的子元素接收点击。纯提示 toast 的 `Border` 自身设 `IsHitTestVisible=false` 继续穿透不挡操作。
+- `ToastService.Show` 已支持 `actionText + onAction`：删除类 toast 统一传 `("撤销", () => UndoManager.Shared.Undo())`，与 Ctrl+Z 同一条恢复路径；有按钮时停留 6s（给点击时间）、纯提示 2.5s。
+
+### J. AI 结构化输出（OpenAI 兼容）的约束与报错（v0.7.x 沉淀）
+
+- 所有模型走 OpenAI 兼容调用；JSON 解析失败**先自动重试一次**（`StrictJsonRetrySuffix` 追加更强硬的「只输出 JSON」指令再请求一次），而不是一次失败就甩锅用户手动重试。三层解析逻辑抽成 `TryParseJson<T>` 供重试复用。
+- 报错必须**完整人话**：展示模型实际返回开头（~200 字，让用户判断该换哪个模型）+ 说明完整响应已存 `logs/ai-fail/`；绝不把原始报错码 / 截断到看不懂的片段丢用户（呼应 §最高原则红线）。
+
+### K. 排查「你把功能改坏了」的标准动作（v0.7.x 沉淀）
+
+用户报「某功能没了 / 你改坏了」时，先 `git diff` / `git log` **区分三种来源**，再动手：
+1. **我这次改的** —— 看未提交 diff 是否真碰了该功能的代码路径；
+2. **会话开始前就存在的未提交改动** —— `git status` 里早就是 `M` 的文件不是我这次的（可能是用户或更早 WIP）；
+3. **从来如此** —— 用户记的可能是 **Mac 版**的交互。本次「撤销消失」真相是 ③：Windows 版一直只有 Ctrl+Z、从无可点击撤销按钮 —— 但仍按商业标准补齐了可点击入口。
+
+**破坏性验证纪律**：在用户真实项目上验证删除/撤销，先确认有可靠回滚（Ctrl+Z / 快照）再动；每步用日志 `[GroupDiag] totalCards` 核对计数确认无重复插入；点击用 UIA 拿**精确坐标**，不要盲点（盲点坐标点偏会穿透误触发别的控件）。
+
+### L. UI 打磨沉淀（v0.7.x）
+
+一轮轮 UI 优化里值得复用的点：
+- **小字发虚的头号元凶**是 WPF 默认 `TextFormattingMode=Ideal`；全局 `Window` 隐式样式设 `TextOptions.TextFormattingMode=Display` + ClearType 后中文小字立刻清晰（性价比最高的一处改动）。
+- 缩略图**必须 `DecodePixelWidth` 按显示尺寸解码**：竖屏 1080×1920 整图解进内存约 8MB×几十张 = 数百 MB，卡顿主因（`ThumbnailCache` + `InlineVideoPlayer.LoadThumb` 都设了 540）。不要 `new BitmapImage()` 全分辨率同步加载。
+- 设计系统集中在 `Resources/Theme/`：`Brushes/Typography/Spacing` + `Styles.xaml`（keyed）+ `Controls.xaml`（隐式：滚动条/复选框/下拉/Tooltip/滑块/右键菜单）。注意 WPF 隐式样式模板里 `StaticResource` 解析要求每个字典自合并依赖字典（`Controls.xaml` 漏 merge `Typography` 会在右键菜单弹出时崩 `StaticResourceHolder`）。
+- 失败态视觉**不要整张红色洪水盖住画面**：暗色蒙版（缩略图仍可辨识）+ 红色圆形徽章 + 红状态文案即可；失败语义靠左红边带/红徽章/红文案/重试按钮多处表达，不靠刺眼。
+- 汇总「总时长」用 `FrameTime.HumanDuration`（mm:ss / h:mm:ss），不要给用户看原始秒数「2313s」。
+

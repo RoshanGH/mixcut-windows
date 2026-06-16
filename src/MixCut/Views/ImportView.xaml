@@ -89,6 +89,7 @@
                                 <Border.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="复制文件名" Click="OnCopyName" Tag="{Binding}" />
+                                        <MenuItem Header="复制全部台词（带时间）" Click="OnCopyAllLyrics" Tag="{Binding}" />
                                         <MenuItem Header="在资源管理器中显示" Click="OnShowInExplorer" Tag="{Binding}" />
                                         <Separator />
                                         <MenuItem Header="删除视频" Click="OnDeleteVideoMenu" Tag="{Binding}" />
@@ -148,14 +149,20 @@
                                                                      BorderThickness="0" />
                                                     </Grid>
                                                 </Border>
-                                                <!-- 失败：红色遮罩 + 文字 -->
-                                                <Border Background="#A0CC2222"
+                                                <!-- 失败：暗色蒙版（缩略图仍可辨识）+ 红色圆形 ✕ 徽章 + 文字。
+                                                     失败语义已由左侧红边带 / 红状态徽章 / 红错误文案 / 重试按钮四处表达，
+                                                     这里不再用整张红色洪水盖住画面（商用标准：状态清晰但画面可辨）。-->
+                                                <Border Background="#99000000"
                                                         Visibility="{Binding FailedStripVisibility}">
                                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                        <TextBlock Text="✕" Foreground="White" FontSize="36"
-                                                                   FontWeight="Bold" HorizontalAlignment="Center" />
+                                                        <Border Background="#E5D33A3A" CornerRadius="999"
+                                                                Width="44" Height="44" HorizontalAlignment="Center">
+                                                            <TextBlock Text="✕" Foreground="White" FontSize="22"
+                                                                       FontWeight="Bold" HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center" />
+                                                        </Border>
                                                         <TextBlock Text="处理失败" Foreground="White" FontSize="12"
-                                                                   FontWeight="SemiBold" Margin="0,4,0,0"
+                                                                   FontWeight="SemiBold" Margin="0,8,0,0"
                                                                    HorizontalAlignment="Center" />
                                                     </StackPanel>
                                                 </Border>
@@ -231,6 +238,17 @@
                                                            FontSize="9" Foreground="#AAA"
                                                            FontFamily="Consolas, monospace"
                                                            VerticalAlignment="Bottom" Margin="6,0,0,0" />
+                                                <!-- 一键复制全部台词（带起止时间，ASR 格式）。仅在有台词时显示。 -->
+                                                <Button Visibility="{Binding SentencesVisibility}"
+                                                        Tag="{Binding}"
+                                                        Click="OnCopyAllLyrics"
+                                                        Background="Transparent" BorderThickness="0"
+                                                        Padding="4,0" Margin="6,0,0,0" FontSize="9"
+                                                        Foreground="#1D6BE5" Cursor="Hand"
+                                                        VerticalAlignment="Bottom"
+                                                        ToolTip="复制全部台词（带起止时间，可粘贴到文档/表格）">
+                                                    <TextBlock Text="📋 复制" />
+                                                </Button>
                                             </StackPanel>
                                             <!-- ASR 异常时显示「重做」按钮（对齐 Mac retryASR 入口） -->
                                             <Button Grid.Column="1"

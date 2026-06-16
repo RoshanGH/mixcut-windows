@@ -9,13 +9,14 @@ public sealed record BatchExportItem(
     Guid Id,
     string SourcePath,
     string SourceVideoName,     // 不含扩展名
-    double StartTime,
-    double EndTime,
+    int StartFrame,
+    int EndFrame,
+    double Fps,
     int SequenceNumber)         // 分镜在所属视频内的编号（1-based）
 {
     /// <summary>默认文件名：{编号}_{原视频名}.mp4</summary>
     public string FileName => $"{SequenceNumber}_{SourceVideoName}.mp4";
-    public double Duration => Math.Max(0, EndTime - StartTime);
+    public double Duration => Fps > 0 ? Math.Max(0, EndFrame - StartFrame) / Fps : 0;
 }
 
 /// <summary>批量导出进度快照。对应 macOS 版 SegmentBatchExportProgress。</summary>
@@ -81,9 +82,9 @@ public sealed class BatchSegmentExportService
 
             try
             {
-                await _ffmpeg.CutSegmentAsync(
-                    item.SourcePath, item.StartTime, item.EndTime, outputPath,
-                    reencode: true, cancellationToken: cancellationToken);
+                await _ffmpeg.CutSegmentFramesAsync(
+                    new FrameClip(item.SourcePath, item.StartFrame, item.EndFrame, item.Fps),
+                    outputPath, cancellationToken);
                 succeeded++;
             }
             catch (OperationCanceledException)
