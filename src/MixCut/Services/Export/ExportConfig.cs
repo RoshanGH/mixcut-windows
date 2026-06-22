@@ -135,7 +135,11 @@ public static class ExportEnumExtensions
 /// <summary>导出配置。对应 macOS 版 ExportConfig。</summary>
 public sealed class ExportConfig
 {
-    public ExportResolution Resolution { get; set; } = ExportResolution.Original;
+    /// <summary>
+    /// 默认 1080p：广告投放标准分辨率，绝大多数平台本就压到 1080p，画质无损失但稳定性大增
+    /// （4K 竖屏源拼 4K 输出会让 filter graph 内存翻 4 倍，繁忙机器易 OOM）。4K 仍可手选「原始分辨率」。
+    /// </summary>
+    public ExportResolution Resolution { get; set; } = ExportResolution.P1080;
 
     /// <summary>默认硬件加速 H.264，若机器无可用硬件编码器，<see cref="ExportEnumExtensions.IsHardware"/> 自动回退软件。</summary>
     public ExportCodec Codec { get; set; } = ExportCodec.H264Hardware;

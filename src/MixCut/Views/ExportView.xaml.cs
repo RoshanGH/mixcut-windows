@@ -38,7 +38,9 @@ public partial class ExportView : UserControl, IProjectView
         {
             ResolutionCombo.Items.Add(r.Label());
         }
-        ResolutionCombo.SelectedIndex = 0;
+        // 默认选 1080p（enum 顺序 Original=0, P1080=1）：与 ExportConfig 默认对齐，
+        // 避免「代码默认 1080p、UI 却显示原始分辨率」的矛盾。4K 仍可手选「原始分辨率」。
+        ResolutionCombo.SelectedIndex = (int)ExportResolution.P1080;
         foreach (var c in Enum.GetValues<ExportCodec>())
         {
             CodecCombo.Items.Add(c.Label());
@@ -396,7 +398,22 @@ public partial class ExportView : UserControl, IProjectView
         }
 
         // v0.5.0：走 ConcurrencyPolicy 统一策略，有 GPU 编码时加成（NVENC/QSV/AMF +3 路）。
-        var concurrency = Infrastructure.ConcurrencyPolicy.MaxExportConcurrency(tasks.Count);
+        // 并按本批最高输出分辨率额外封顶（4K filter graph 极吃内存，多路并发会 OOM）。
+        var maxPixels = tasks.Max(t =>
+        {
+            var res = Services.Export.ExportService.ResolveResolution(
+                config.Resolution, t.Input.MaxWidth, t.Input.MaxHeight);
+            var parts = res.Split(':');
+            return (parts.Length == 2
+                    && long.TryParse(parts[0], out var w) && w > 0
+                    && long.TryParse(parts[1], out var h) && h > 0)
+                ? w * h : 1920L * 1080L;
+        });
+        var concurrency = Infrastructure.ConcurrencyPolicy.MaxExportConcurrency(tasks.Count, maxPixels);
+        Serilog.Log.Information(
+            "[ExportConcurrency] tasks={Tasks} pixels={Pixels} concurrency={Concurrency} 说明={Explain}",
+            tasks.Count, maxPixels, concurrency,
+            Infrastructure.ConcurrencyPolicy.ExplainExportFormula(maxPixels));
 
         CompletePanel.Visibility = Visibility.Collapsed;
         ErrorPanel.Visibility = Visibility.Collapsed;
@@ -436,7 +453,9 @@ public partial class ExportView : UserControl, IProjectView
             }
             catch (Exception ex)
             {
-                lock (errors) { errors.Add($"{task.Scheme.Name}: {ex.Message}"); }
+                // 翻译成人话 + 可操作建议；原始 exit/stderr 已在 [ffmpeg-fail] 日志。
+                var friendly = Services.Export.ExportErrorMessage.ToFriendly(ex);
+                lock (errors) { errors.Add($"{task.Scheme.Name}: {friendly}"); }
             }
             finally
             {

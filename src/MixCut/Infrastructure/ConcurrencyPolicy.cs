@@ -30,7 +30,13 @@ public static class ConcurrencyPolicy
     }
 
     /// <summary>批量导出并发数（每路跑 ffmpeg 编码）。GPU 编码加速时显著提升。</summary>
-    public static int MaxExportConcurrency(int tasksCount = int.MaxValue)
+    /// <param name="outputPixels">
+    /// 本批输出分辨率的像素总数（W×H）。0=未知（保持旧行为）。
+    /// 高分辨率（4K）的 filter graph 极吃内存，并发开满会撞 OOM（exit -12
+    /// "Cannot allocate memory"，客户 RTX 3060 Ti 4K 导出 15/40 失败的根因），
+    /// 故按分辨率额外封顶 —— 这是 NVENC 会话上限之外的「内存带宽」维度限制。
+    /// </param>
+    public static int MaxExportConcurrency(int tasksCount = int.MaxValue, long outputPixels = 0)
     {
         var cores = Environment.ProcessorCount;
         var h264hw = HardwareEncoderProbe.H264Hardware;
@@ -46,11 +52,24 @@ public static class ConcurrencyPolicy
         var ceil = isNvenc ? 3 : (hwEncode ? 11 : 8);
         var raw = Math.Max(1, (cores - 2) / 2) + hwBoost;
         var bounded = Math.Min(ceil, raw);
+        // 分辨率内存封顶：4K 串行、2K 限 2、1080p 限 4，避免多路 4K filter graph 叠加 OOM。
+        bounded = Math.Min(bounded, ResolutionCap(outputPixels));
         return Math.Min(bounded, Math.Max(1, tasksCount));
     }
 
+    /// <summary>按输出像素数返回内存安全的并发上限（0=未知则不额外限制）。</summary>
+    private static int ResolutionCap(long outputPixels) => outputPixels switch
+    {
+        0 => int.MaxValue,                 // 未知：保持旧行为
+        >= 3840L * 2160 => 1,              // ≥4K（含 2160×3840 竖屏 8.29M px）：串行
+        >= 2560L * 1440 => 2,              // ≥1440p / 2K
+        >= 1920L * 1080 => 4,              // ≥1080p：适度限
+        _ => int.MaxValue,                 // ≤1080p：不额外限
+    };
+
     /// <summary>给 Settings UI 用的「并发数透明拆解」文本，例如 "5 + GPU 加成 +3 = 8 路"。</summary>
-    public static string ExplainExportFormula()
+    /// <param name="outputPixels">本次输出像素数；0=理论上限（Settings 通用展示用 0）。</param>
+    public static string ExplainExportFormula(long outputPixels = 0)
     {
         var cores = Environment.ProcessorCount;
         var basePart = Math.Max(1, (cores - 2) / 2);
@@ -59,17 +78,33 @@ public static class ConcurrencyPolicy
         var isNvenc = h264hw?.Contains("nvenc", StringComparison.OrdinalIgnoreCase) == true;
         var ceil = isNvenc ? 3 : (hwEncode ? 11 : 8);
         var raw = basePart + (hwEncode ? 3 : 0);
-        var actual = Math.Min(ceil, raw);
+        var beforeResCap = Math.Min(ceil, raw);
+        var resCap = ResolutionCap(outputPixels);
+        var actual = Math.Min(beforeResCap, resCap);
 
+        string baseText;
         if (!hwEncode)
         {
-            return $"{actual} 路（CPU (N-2)/2 = {basePart}，无 GPU 加速）";
+            baseText = $"{beforeResCap} 路（CPU (N-2)/2 = {basePart}，无 GPU 加速）";
         }
-        if (isNvenc)
+        else if (isNvenc)
         {
-            return $"{actual} 路（NVENC 会话上限封 {ceil} 路，避免并发超限导致导出失败）";
+            baseText = $"{beforeResCap} 路（NVENC 会话上限封 {ceil} 路，避免并发超限导致导出失败）";
         }
-        return $"{actual} 路（CPU {basePart} + GPU 加成 +3，上限 {ceil}）";
+        else
+        {
+            baseText = $"{beforeResCap} 路（CPU {basePart} + GPU 加成 +3，上限 {ceil}）";
+        }
+
+        // 分辨率内存封顶生效且更严格时，追加说明。
+        if (resCap < beforeResCap)
+        {
+            var resLabel = outputPixels >= 3840L * 2160 ? "4K"
+                : outputPixels >= 2560L * 1440 ? "2K"
+                : "1080p";
+            return $"{actual} 路（本次输出 {resLabel}，为避免内存不足已限为 {actual} 路{(actual == 1 ? "串行" : "")}）";
+        }
+        return baseText;
     }
 
     /// <summary>给 Settings UI 用的「分析并发透明拆解」文本。</summary>

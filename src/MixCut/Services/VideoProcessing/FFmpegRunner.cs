@@ -35,10 +35,16 @@ public sealed class FFmpegRunner
     // ---- 核心执行 ----
 
     /// <summary>执行 FFmpeg 命令并返回 stdout 原始字节。</summary>
+    /// <param name="timeout">
+    /// 自定义超时；null 用 <see cref="DefaultTimeout"/>（3 分钟）。
+    /// 导出拼接（4K / CPU 软编码）远超 3 分钟，必须由 ConcatAsync 按数据规模动态算后传入，
+    /// 严禁写死（CLAUDE.md §10：写死的超时是反模式）。
+    /// </param>
     public async Task<byte[]> RunAsync(
         IReadOnlyList<string> arguments,
         double? totalDuration = null,
         Action<FFmpegProgress>? onProgress = null,
+        TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
         if (!BundledBinaries.FfmpegAvailable)
@@ -63,7 +69,7 @@ public sealed class FFmpegRunner
 
         var (exitCode, stdout, stderr) = await ExecuteAsync(
             BundledBinaries.Ffmpeg, arguments, captureStdout: true,
-            stderrHandler, DefaultTimeout, cancellationToken);
+            stderrHandler, timeout ?? DefaultTimeout, cancellationToken);
 
         if (exitCode != 0)
         {
@@ -605,7 +611,36 @@ public sealed class FFmpegRunner
         args.AddRange(new[] { "-y", outputPath });
 
         var totalDuration = segments.Sum(s => s.Duration);
-        await RunAsync(args, totalDuration, onProgress, cancellationToken);
+
+        // 动态超时：导出拼接耗时随「输出像素 × 成片时长 × 编码方式」线性增长，绝不写死。
+        //   pixelFactor: 1080p=1.0，4K(2160×3840)≈4.0；
+        //   speedFactor: libx264 软编比 nvenc 慢 5-8×，取 6；硬件取 1；
+        //   下限 2 分钟防极短片把超时算成几秒；无上限（4K/CPU 降级可能要几十分钟，必须给够）。
+        var outputPixels = ParsePixels(targetScale);
+        var pixelFactor = outputPixels / (1920.0 * 1080.0);
+        var speedFactor = isHardware ? 1.0 : 6.0;
+        var perOutputSec = 2.5 * pixelFactor * speedFactor;
+        var exportTimeout = TimeSpan.FromSeconds(Math.Max(totalDuration * perOutputSec, 120));
+        Serilog.Log.Information(
+            "[ExportTimeout] totalDur={Dur:F1}s pixels={Px} hw={Hw} timeout={Timeout:F0}s",
+            totalDuration, outputPixels, isHardware, exportTimeout.TotalSeconds);
+
+        // ⚠️ 命名参数：RunAsync 新增的 timeout 在 cancellationToken 之前，
+        //   必须命名传参，否则 token 会被当成 timeout、取消失效。
+        await RunAsync(args, totalDuration, onProgress, timeout: exportTimeout, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>把 "W:H" 形式的目标分辨率解析成像素总数；失败回退 1080p。</summary>
+    private static long ParsePixels(string scale)
+    {
+        var parts = scale.Split(':');
+        if (parts.Length == 2
+            && long.TryParse(parts[0], out var w) && w > 0
+            && long.TryParse(parts[1], out var h) && h > 0)
+        {
+            return w * h;
+        }
+        return 1920L * 1080L;
     }
 
     // ---- 进度解析 ----
