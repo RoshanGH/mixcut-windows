@@ -687,13 +687,14 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- ========== 配音变体检视器（v0.5.0）：单击分镜后左侧 drawer ========== -->
+            <!-- ========== 配音变体检视器（v0.5.0）：单击分镜后左侧 drawer（浅色，对齐设计系统） ========== -->
             <Border Grid.Column="0" VerticalAlignment="Stretch" Width="340" Margin="0,0,12,0"
                     DataContext="{Binding DubInspector}"
                     Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}"
-                    Background="#16161A" CornerRadius="10">
+                    Background="White" BorderBrush="{StaticResource BorderPrimaryBrush}" BorderThickness="1"
+                    CornerRadius="10">
                 <Border.Effect>
-                    <DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.4" Color="Black" />
+                    <DropShadowEffect BlurRadius="12" ShadowDepth="0" Opacity="0.12" Color="Black" />
                 </Border.Effect>
                 <DockPanel Margin="14,12">
                     <!-- 头部 -->
@@ -701,20 +702,23 @@
                         <StackPanel>
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="🎙" FontSize="14" Margin="0,0,6,0" />
-                                <TextBlock Text="配音变体池" FontSize="14" FontWeight="SemiBold" Foreground="White" />
+                                <TextBlock Text="配音变体池" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" />
                             </StackPanel>
-                            <TextBlock Text="{Binding HeaderSubtitle}" FontSize="11" Foreground="#909090" Margin="0,2,0,0" />
+                            <TextBlock Text="{Binding HeaderSubtitle}" FontSize="11"
+                                       Foreground="{StaticResource TextTertiaryBrush}" Margin="0,2,0,0" />
                         </StackPanel>
                         <Button Content="✕" Command="{Binding CloseCommand}" HorizontalAlignment="Right" VerticalAlignment="Top"
-                                Background="Transparent" Foreground="#B0B0B0" BorderThickness="0" Cursor="Hand"
-                                FontSize="14" Padding="6,0" ToolTip="关闭" />
+                                Background="Transparent" Foreground="{StaticResource TextTertiaryBrush}" BorderThickness="0"
+                                Cursor="Hand" FontSize="14" Padding="6,0" ToolTip="关闭" />
                     </Grid>
 
                     <!-- 保留原声态 -->
                     <StackPanel DockPanel.Dock="Top" Margin="0,40,0,0" HorizontalAlignment="Center"
                                 Visibility="{Binding IsLocked, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="🔒" FontSize="34" HorizontalAlignment="Center" />
-                        <TextBlock Text="保留原声（明星出镜锁定，不参与配音）" FontSize="12" Foreground="#B0B0B0"
+                        <TextBlock Text="保留原声（明星出镜锁定，不参与配音）" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
                                    TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0" MaxWidth="260" />
                     </StackPanel>
 
@@ -723,8 +727,8 @@
                                 Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="🪄" FontSize="34" HorizontalAlignment="Center" />
                         <TextBlock Text="还没有改写版。点视频上方「克隆并改写配音」批量生成，或手动写一版。"
-                                   FontSize="12" Foreground="#B0B0B0" TextWrapping="Wrap" TextAlignment="Center"
-                                   Margin="0,8,0,12" MaxWidth="260" />
+                                   FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,8,0,12" MaxWidth="260" />
                         <Button Content="+ 手动添加一版（自己写台词）" Command="{Binding AddManualCommand}"
                                 IsEnabled="{Binding IsNotBusy}" Cursor="Hand" Padding="10,6" FontSize="12"
                                 Background="{StaticResource AccentBlueBrush}" Foreground="White" BorderThickness="0" />
@@ -742,9 +746,10 @@
                         <StackPanel Grid.Row="0" Margin="0,0,0,8">
                             <Button Content="↻ 重新改写本分镜" Command="{Binding RewriteSegmentCommand}"
                                     IsEnabled="{Binding IsNotBusy}" Cursor="Hand" Padding="8,5" FontSize="12"
-                                    HorizontalAlignment="Stretch" Background="#2A2A33" Foreground="White" BorderThickness="0" />
+                                    HorizontalAlignment="Stretch" Background="{StaticResource AccentBlueLightBrush}"
+                                    Foreground="{StaticResource AccentBlueBrush}" BorderThickness="0" />
                             <TextBlock Text="改了原台词后，点此用新原文重写本分镜" FontSize="10"
-                                       Foreground="#808080" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                       Foreground="{StaticResource TextTertiaryBrush}" Margin="0,4,0,0" TextWrapping="Wrap" />
                         </StackPanel>
 
                         <!-- 变体卡列表 -->
@@ -752,7 +757,9 @@
                             <ItemsControl ItemsSource="{Binding Variants}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="#1E1E24" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                                        <Border Background="{StaticResource BgSubtleBrush}"
+                                                BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10" Margin="0,0,0,8">
                                             <StackPanel>
                                                 <!-- 卡头：字母胶囊 + 字数提示 + 编辑/删除 -->
                                                 <Grid>
@@ -772,13 +779,13 @@
                                                                ToolTip="{Binding CharCountHint}">
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock">
-                                                                <Setter Property="Foreground" Value="#909090" />
+                                                                <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding CharCountLevel}" Value="warn">
-                                                                        <Setter Property="Foreground" Value="#FF6B6B" />
+                                                                        <Setter Property="Foreground" Value="#D33A3A" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding CharCountLevel}" Value="short">
-                                                                        <Setter Property="Foreground" Value="#FFA94D" />
+                                                                        <Setter Property="Foreground" Value="#C06F00" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
@@ -787,17 +794,17 @@
                                                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                                                 Visibility="{Binding IsEditing, Converter={StaticResource InverseBoolToVisibility}}">
                                                         <Button Content="✏" Command="{Binding EditCommand}" ToolTip="编辑台词"
-                                                                Background="Transparent" Foreground="#B0B0B0" BorderThickness="0"
-                                                                Cursor="Hand" Padding="4,0" FontSize="12" />
+                                                                Background="Transparent" Foreground="{StaticResource TextTertiaryBrush}"
+                                                                BorderThickness="0" Cursor="Hand" Padding="4,0" FontSize="12" />
                                                         <Button Content="🗑" Command="{Binding DeleteCommand}" ToolTip="删除此版"
-                                                                Background="Transparent" Foreground="#B0B0B0" BorderThickness="0"
-                                                                Cursor="Hand" Padding="4,0" FontSize="12" />
+                                                                Background="Transparent" Foreground="{StaticResource TextTertiaryBrush}"
+                                                                BorderThickness="0" Cursor="Hand" Padding="4,0" FontSize="12" />
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                                                 Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
                                                         <Button Content="✕" Command="{Binding CancelEditCommand}" ToolTip="取消"
-                                                                Background="Transparent" Foreground="#B0B0B0" BorderThickness="0"
-                                                                Cursor="Hand" Padding="4,0" FontSize="12" />
+                                                                Background="Transparent" Foreground="{StaticResource TextTertiaryBrush}"
+                                                                BorderThickness="0" Cursor="Hand" Padding="4,0" FontSize="12" />
                                                         <Button Content="✓" Command="{Binding SaveEditCommand}" ToolTip="保存并重新生成"
                                                                 Background="Transparent" Foreground="{StaticResource SuccessGreenBrush}"
                                                                 BorderThickness="0" Cursor="Hand" Padding="4,0" FontSize="12" />
@@ -805,13 +812,14 @@
                                                 </Grid>
 
                                                 <!-- 台词正文（显示态） -->
-                                                <TextBlock Text="{Binding RewrittenText}" Foreground="#E0E0E0" FontSize="12"
-                                                           TextWrapping="Wrap" Margin="0,8,0,0"
+                                                <TextBlock Text="{Binding RewrittenText}" Foreground="{StaticResource TextPrimaryBrush}"
+                                                           FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"
                                                            Visibility="{Binding IsEditing, Converter={StaticResource InverseBoolToVisibility}}" />
                                                 <!-- 台词正文（编辑态） -->
                                                 <TextBox Text="{Binding EditingText, UpdateSourceTrigger=PropertyChanged}"
                                                          AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" Margin="0,8,0,0"
-                                                         Background="#0E0E12" Foreground="White" BorderBrush="#3A3A44"
+                                                         Background="White" Foreground="{StaticResource TextPrimaryBrush}"
+                                                         BorderBrush="{StaticResource BorderPrimaryBrush}"
                                                          Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
 
                                                 <!-- 生成/播放控件 -->
@@ -833,13 +841,13 @@
                                                     </Button>
                                                     <Button Content="↻" Command="{Binding GenerateCommand}" ToolTip="重新生成配音"
                                                             Visibility="{Binding HasAudio, Converter={StaticResource BoolToVisibility}}"
-                                                            Background="#2A2A33" Foreground="#B0B0B0" BorderThickness="0"
-                                                            Cursor="Hand" Padding="8,4" FontSize="11" Margin="0,0,6,0" />
+                                                            Background="{StaticResource BgQuaternaryBrush}" Foreground="{StaticResource TextSecondaryBrush}"
+                                                            BorderThickness="0" Cursor="Hand" Padding="8,4" FontSize="11" Margin="0,0,6,0" />
                                                     <TextBlock Text="{Binding DurationText}" FontSize="11" VerticalAlignment="Center"
                                                                Visibility="{Binding HasAudio, Converter={StaticResource BoolToVisibility}}">
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock">
-                                                                <Setter Property="Foreground" Value="#FFA94D" />
+                                                                <Setter Property="Foreground" Value="#C06F00" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding DurationAligned}" Value="True">
                                                                         <Setter Property="Foreground" Value="{StaticResource SuccessGreenBrush}" />
@@ -859,7 +867,8 @@
                         <!-- 手动添加一版 -->
                         <Button Grid.Row="2" Content="+ 手动添加一版" Command="{Binding AddManualCommand}"
                                 IsEnabled="{Binding IsNotBusy}" Cursor="Hand" Margin="0,8,0,0" Padding="8,5" FontSize="12"
-                                HorizontalAlignment="Stretch" Background="#2A2A33" Foreground="White" BorderThickness="0" />
+                                HorizontalAlignment="Stretch" Background="{StaticResource BgSubtleBrush}"
+                                Foreground="{StaticResource TextSecondaryBrush}" BorderThickness="0" />
                     </Grid>
                 </DockPanel>
             </Border>
