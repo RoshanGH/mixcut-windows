@@ -54,12 +54,29 @@ public class Segment
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
+    // ---- 配音（v0.5.0 分镜级 AI 配音）----
+
+    /// <summary>🔒 保留原声：明星出镜等不可替换镜头，不参与改写/配音/换字幕。</summary>
+    public bool IsVoiceLocked { get; set; }
+
+    /// <summary>是否对字幕区域做遮挡（false=直接烧录；true 时看 <see cref="MaskStyleRaw"/>）。</summary>
+    public bool HasHardSubtitle { get; set; }
+
+    /// <summary>遮挡底层样式（<see cref="MaskStyle"/> 的字符串："Blur" / "Solid"）。</summary>
+    public string MaskStyleRaw { get; set; } = nameof(Models.MaskStyle.Blur);
+
+    /// <summary>遮挡框归一化坐标 JSON（经 <see cref="MaskRect"/> 读写）。</summary>
+    public string? MaskRectJson { get; set; }
+
     // ---- 导航属性 ----
 
     public Guid? VideoId { get; set; }
     public Video? Video { get; set; }
 
     public List<SchemeSegment> SchemeSegments { get; set; } = new();
+
+    /// <summary>本分镜的配音变体池（= 改写版 × 音色）。</summary>
+    public List<SegmentDub> SegmentDubs { get; set; } = new();
 
     // ---- 计算属性 ----
 
@@ -84,6 +101,70 @@ public class Segment
     {
         get => JsonColumn.Read<string>(KeywordsJson);
         set => KeywordsJson = JsonColumn.Write(value);
+    }
+
+    // ---- 配音计算属性 ----
+
+    /// <summary>遮挡底层样式（读写 <see cref="MaskStyleRaw"/>）。</summary>
+    [NotMapped]
+    public MaskStyle MaskStyle
+    {
+        get => SubtitleTreatmentExtensions.ParseMaskStyle(MaskStyleRaw);
+        set => MaskStyleRaw = value.ToString();
+    }
+
+    /// <summary>字幕处理方式（UI 三选一，映射底层 <see cref="HasHardSubtitle"/>+<see cref="MaskStyleRaw"/>）。</summary>
+    [NotMapped]
+    public SubtitleTreatment SubtitleTreatment
+    {
+        get => SubtitleTreatmentExtensions.FromFields(HasHardSubtitle, MaskStyleRaw);
+        set
+        {
+            var (has, raw) = value.ToFields();
+            HasHardSubtitle = has;
+            MaskStyleRaw = raw;
+        }
+    }
+
+    /// <summary>遮挡框归一化坐标（读写 <see cref="MaskRectJson"/>）。未设置时返回默认框。</summary>
+    [NotMapped]
+    public SubtitleMaskRect MaskRect
+    {
+        get => string.IsNullOrWhiteSpace(MaskRectJson)
+            ? SubtitleMaskRect.Default
+            : System.Text.Json.JsonSerializer.Deserialize<SubtitleMaskRect>(MaskRectJson!);
+        set => MaskRectJson = System.Text.Json.JsonSerializer.Serialize(value);
+    }
+
+    /// <summary>
+    /// 导出/组合用的有效配音变体：仅取已生成音频者，并按 <see cref="SegmentDub.TextVariantIndex"/> 去重
+    /// （同一改写版若有多个音色，优先保留本视频「克隆原声」那条）。clone-only 下每版唯一。
+    /// 升序返回，供 _A/_B… 命名与笛卡尔积组合使用。对应 macOS Segment.effectiveDubVariants。
+    /// </summary>
+    [NotMapped]
+    public IReadOnlyList<SegmentDub> EffectiveDubVariants
+    {
+        get
+        {
+            var cloned = Video?.ClonedVoiceId;
+            var byIndex = new Dictionary<int, SegmentDub>();
+            foreach (var d in SegmentDubs)
+            {
+                if (d.AudioFilePath is null) continue;
+                if (byIndex.TryGetValue(d.TextVariantIndex, out var existing))
+                {
+                    if (d.VoiceId == cloned && existing.VoiceId != cloned)
+                    {
+                        byIndex[d.TextVariantIndex] = d;
+                    }
+                }
+                else
+                {
+                    byIndex[d.TextVariantIndex] = d;
+                }
+            }
+            return byIndex.Values.OrderBy(d => d.TextVariantIndex).ToList();
+        }
     }
 
     /// <summary>时长（保证非负）。</summary>

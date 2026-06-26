@@ -427,6 +427,35 @@ public partial class App : Application
             AddColumnIfMissing(db, "Segments", "EndFrame", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(db, "Segments", "Fps", "REAL NOT NULL DEFAULT 0");
 
+            // v0.5.0 分镜级 AI 配音：Segment 字幕处理/保留原声列 + Video 克隆音色 + SchemeSegment 选定变体 + SegmentDubs 新表
+            AddColumnIfMissing(db, "Segments", "IsVoiceLocked", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(db, "Segments", "HasHardSubtitle", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(db, "Segments", "MaskStyleRaw", "TEXT NOT NULL DEFAULT 'Blur'");
+            AddColumnIfMissing(db, "Segments", "MaskRectJson", "TEXT");
+            AddColumnIfMissing(db, "Videos", "ClonedVoiceId", "TEXT");
+            AddColumnIfMissing(db, "SchemeSegments", "SelectedSegmentDubId", "TEXT");
+            CreateTableIfMissing(db, "SegmentDubs", @"
+                CREATE TABLE IF NOT EXISTS ""SegmentDubs"" (
+                    ""Id"" TEXT NOT NULL CONSTRAINT ""PK_SegmentDubs"" PRIMARY KEY,
+                    ""SegmentId"" TEXT NULL,
+                    ""VoiceId"" TEXT NOT NULL DEFAULT '',
+                    ""VoiceProvider"" TEXT NOT NULL DEFAULT 'qwen',
+                    ""TextVariantIndex"" INTEGER NOT NULL DEFAULT 0,
+                    ""RewrittenText"" TEXT NOT NULL DEFAULT '',
+                    ""AudioFilePath"" TEXT NULL,
+                    ""AudioDuration"" REAL NOT NULL DEFAULT 0,
+                    ""AtempoFactor"" REAL NOT NULL DEFAULT 1.0,
+                    ""FreezePadFrames"" INTEGER NOT NULL DEFAULT 0,
+                    ""TrailingSilence"" REAL NOT NULL DEFAULT 0,
+                    ""GeneratedForStartFrame"" INTEGER NOT NULL DEFAULT -1,
+                    ""GeneratedForEndFrame"" INTEGER NOT NULL DEFAULT -1,
+                    ""GeneratedForTextHash"" TEXT NOT NULL DEFAULT '',
+                    ""StatusRaw"" TEXT NOT NULL DEFAULT 'Pending',
+                    CONSTRAINT ""FK_SegmentDubs_Segments_SegmentId"" FOREIGN KEY (""SegmentId"")
+                        REFERENCES ""Segments"" (""Id"") ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS ""IX_SegmentDubs_SegmentId"" ON ""SegmentDubs"" (""SegmentId"");");
+
             // 清理上次未正常完成的中间态视频（崩溃/强退导致状态卡在分析中）。
             // 对齐 macOS 版 MixCutApp.resetStaleAnalyzingStatus。
             ResetStaleAnalyzingStatus(db);
@@ -551,6 +580,42 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error(ex, "[SchemaMigration] 补列失败 {Table}.{Column}", table, column);
+        }
+    }
+
+    /// <summary>
+    /// 在 SQLite 上幂等建表（升级老库用）。EF Core 的 <c>EnsureCreated</c> 只在数据库<b>整体不存在</b>时
+    /// 才建全部表；老用户库已存在 → 新加的实体表（如 SegmentDubs）不会被创建，写入即撞「no such table」。
+    /// 故新表必须显式 <c>CREATE TABLE IF NOT EXISTS</c>。DDL 需与 EF 映射一致（Guid→TEXT、double→REAL、
+    /// int/bool→INTEGER、string→TEXT），列顺序无所谓，EF 按列名读写。
+    /// </summary>
+    private static void CreateTableIfMissing(MixCutDbContext db, string table, string createSql)
+    {
+        try
+        {
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+
+            using var checkCmd = conn.CreateCommand();
+            checkCmd.CommandText =
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=$n";
+            var p = checkCmd.CreateParameter();
+            p.ParameterName = "$n";
+            p.Value = table;
+            checkCmd.Parameters.Add(p);
+            var exists = checkCmd.ExecuteScalar() != null;
+
+            if (!exists)
+            {
+                using var create = conn.CreateCommand();
+                create.CommandText = createSql;
+                create.ExecuteNonQuery();
+                Log.Information("[SchemaMigration] 建表: {Table}", table);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[SchemaMigration] 建表失败 {Table}", table);
         }
     }
 

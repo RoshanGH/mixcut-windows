@@ -14,6 +14,13 @@ public class SchemeSegment
     /// <summary>为什么放在这个位置的说明。</summary>
     public string? PositionReasoning { get; set; }
 
+    /// <summary>
+    /// 该槽位选定的配音变体 id（v0.5.0 配音）；null = 原声（默认）。
+    /// 消费端用 <c>Segment.EffectiveDubVariants.FirstOrDefault(d =&gt; d.Id == SelectedSegmentDubId)</c> 解析，
+    /// 删后自动回退原声，不会崩。
+    /// </summary>
+    public Guid? SelectedSegmentDubId { get; set; }
+
     // ---- 导航属性 ----
 
     public Guid? SchemeId { get; set; }

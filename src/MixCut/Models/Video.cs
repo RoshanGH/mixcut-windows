@@ -31,6 +31,12 @@ public class Video
     /// <summary>缩略图路径。</summary>
     public string? ThumbnailPath { get; set; }
 
+    /// <summary>
+    /// 注册成功的克隆音色 id（v0.5.0 配音）。按 <see cref="ContentHash"/> 复用：一条视频只克隆一次原声。
+    /// null/空 表示尚未克隆。clone-only 下，各分镜配音变体的 voiceId 恒等于此。
+    /// </summary>
+    public string? ClonedVoiceId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
     // ---- 导航属性 ----

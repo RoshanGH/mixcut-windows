@@ -20,6 +20,7 @@ public class MixCutDbContext : DbContext
     public DbSet<MixScheme> Schemes => Set<MixScheme>();
     public DbSet<SchemeSegment> SchemeSegments => Set<SchemeSegment>();
     public DbSet<ProjectVideo> ProjectVideos => Set<ProjectVideo>();
+    public DbSet<SegmentDub> SegmentDubs => Set<SegmentDub>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -75,6 +76,12 @@ public class MixCutDbContext : DbContext
         b.Entity<SchemeSegment>()
             .HasOne(ss => ss.Segment).WithMany(s => s.SchemeSegments)
             .HasForeignKey(ss => ss.SegmentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // 分镜 1──* 配音变体（级联删除）。v0.5.0 分镜级 AI 配音。
+        b.Entity<SegmentDub>()
+            .HasOne(d => d.Segment).WithMany(s => s.SegmentDubs)
+            .HasForeignKey(d => d.SegmentId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
