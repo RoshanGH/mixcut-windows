@@ -121,6 +121,28 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// v0.5.0：设置某方案槽位选定的配音变体（null=原声）并落库。供分镜序列的配音变体下拉调用。
+    /// </summary>
+    public void SetSchemeSegmentVoice(SchemeSegment ss, Guid? dubId)
+    {
+        ss.SelectedSegmentDubId = dubId; // 先更新内存（下拉/导出即时反映）
+        if (_context is null) return;
+        try
+        {
+            var tracked = _context.SchemeSegments.FirstOrDefault(x => x.Id == ss.Id);
+            if (tracked is not null && tracked.SelectedSegmentDubId != dubId)
+            {
+                tracked.SelectedSegmentDubId = dubId;
+                _context.SaveChanges();
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[DubDiag] 保存方案分镜配音选择失败 ss={Id}", ss.Id);
+        }
+    }
+
     // ---- 生成 ----
 
     /// <summary>生成混剪方案（策略 + 批量组合）。</summary>

@@ -907,11 +907,29 @@ public partial class SchemesView : UserControl, IProjectView
         }
 
         // 分镜序列（横向滚动 Storyboard，对齐 Mac 版）
-        DetailPanel.Children.Add(new TextBlock
+        var seqHeader = new Grid { Margin = new Thickness(0, 6, 0, 8) };
+        seqHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        seqHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        seqHeader.Children.Add(new TextBlock
         {
             Text = "分镜序列（按播放顺序）", FontSize = 12, FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 6, 0, 8),
+            VerticalAlignment = VerticalAlignment.Center,
         });
+        // v0.5.0：可生成的配音组合数提示（每分镜「原声+各改写版」笛卡尔积），>1 才显示。
+        var combosN = Services.Dubbing.SchemeComboPlanner.FeasibleCount(scheme);
+        if (combosN > 1)
+        {
+            var hint = new TextBlock
+            {
+                Text = $"⊞ 可生成 {combosN} 个配音组合", FontSize = 10, FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x1D, 0x6B, 0xE5)),
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "每个分镜可选「原声 + 各改写版」，全部排列组合的条数。在导出页点「导出配音组合」逐条出片。",
+            };
+            Grid.SetColumn(hint, 1);
+            seqHeader.Children.Add(hint);
+        }
+        DetailPanel.Children.Add(seqHeader);
 
         var storyboardScroller = new ScrollViewer
         {
@@ -1026,6 +1044,47 @@ public partial class SchemesView : UserControl, IProjectView
     }
 
     /// <summary>横向 Storyboard 卡片：缩略图 + 序号 + 类型 + 台词 + 右键移除。对齐 Mac 版 StoryboardCard。</summary>
+    /// <summary>配音变体下拉（v0.5.0）：保留原声锁定 / 无改写版灰字 / 有改写版下拉(默认原声)。</summary>
+    private UIElement BuildVoiceSelector(SchemeSegment schemeSeg, Segment seg)
+    {
+        var gray = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+        if (seg.IsVoiceLocked)
+        {
+            return new TextBlock { Text = "🔒 原声（锁定）", FontSize = 10, Foreground = gray, Margin = new Thickness(0, 6, 0, 0) };
+        }
+
+        var variants = seg.EffectiveDubVariants;
+        if (variants.Count == 0)
+        {
+            return new TextBlock { Text = "原声", FontSize = 10, Foreground = gray, Margin = new Thickness(0, 6, 0, 0) };
+        }
+
+        var combo = new ComboBox { FontSize = 10, Margin = new Thickness(0, 6, 0, 0), Padding = new Thickness(6, 2, 6, 2) };
+        combo.Items.Add(new ComboBoxItem { Content = "原声", Tag = null });
+        foreach (var d in variants)
+        {
+            var letter = d.TextVariantIndex is >= 0 and < 26 ? ((char)('A' + d.TextVariantIndex)).ToString() : (d.TextVariantIndex + 1).ToString();
+            combo.Items.Add(new ComboBoxItem { Content = "改写" + letter, Tag = d.Id });
+        }
+
+        // 选中当前（SelectedSegmentDubId；null=原声）
+        combo.SelectedIndex = 0;
+        if (schemeSeg.SelectedSegmentDubId is { } cur)
+        {
+            for (var i = 1; i < combo.Items.Count; i++)
+            {
+                if (combo.Items[i] is ComboBoxItem { Tag: Guid id } && id == cur) { combo.SelectedIndex = i; break; }
+            }
+        }
+
+        combo.SelectionChanged += (_, _) =>
+        {
+            var sel = (combo.SelectedItem as ComboBoxItem)?.Tag as Guid?;
+            _vm.SetSchemeSegmentVoice(schemeSeg, sel);
+        };
+        return combo;
+    }
+
     private UIElement BuildStoryboardCard(int position, SchemeSegment schemeSeg)
     {
         const double cardWidth = 196;
@@ -1154,6 +1213,9 @@ public partial class SchemesView : UserControl, IProjectView
             Margin = new Thickness(0, 4, 0, 0),
             ToolTip = seg.Text,
         });
+
+        // 配音变体选择（v0.5.0，PRD §六）：保留原声锁定 / 无改写版 / 有改写版下拉（默认原声）。
+        info.Children.Add(BuildVoiceSelector(schemeSeg, seg));
 
         // 时长；具体 IN/OUT 时间码放在下方帧边界面板，避免一行塞满信息。
         info.Children.Add(new TextBlock
