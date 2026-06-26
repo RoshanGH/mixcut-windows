@@ -293,6 +293,16 @@ public sealed class AppSettings
         set => Set("last_nav_item", value.ToString());
     }
 
+    /// <summary>
+    /// 配音台词变体数（v0.5.0 配音）：每个非「保留原声」分镜要产出几套改写版。
+    /// 默认 2，夹紧 1~5。对齐 macOS DubbingViewModel.variantCount（UserDefaults["dubVariantCount"]）。
+    /// </summary>
+    public int DubVariantCount
+    {
+        get => int.TryParse(Get("dub_variant_count"), out var n) ? Math.Clamp(n, 1, 5) : 2;
+        set => Set("dub_variant_count", Math.Clamp(value, 1, 5).ToString());
+    }
+
     // ---- 迁移持久化 flag（v0.6.0 对齐 Mac v0.3.x） ----
 
     /// <summary>是否已为老项目补建「自定义组合」策略（Mac v0.3.0 对齐迁移）。</summary>

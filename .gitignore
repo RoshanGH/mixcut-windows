@@ -43,3 +43,6 @@ docs/superpowers/specs/*.draft.md
 
 # 配音烟测运行日志（运行产物）
 scripts/smoke/dubdiag.log
+
+# P2 构建日志（产物）
+p2build.log

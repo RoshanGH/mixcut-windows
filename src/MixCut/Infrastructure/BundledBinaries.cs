@@ -15,9 +15,13 @@ public static class BundledBinaries
     public static string Ffprobe => Path.Combine(BinDirectory, "ffprobe.exe");
     public static string WhisperCli => Path.Combine(BinDirectory, "whisper-cli.exe");
 
+    /// <summary>人声/BGM 分离引擎（demucs.cpp，v0.5.0 配音）。</summary>
+    public static string Demucs => Path.Combine(BinDirectory, "demucs.exe");
+
     public static bool FfmpegAvailable => File.Exists(Ffmpeg);
     public static bool FfprobeAvailable => File.Exists(Ffprobe);
     public static bool WhisperAvailable => File.Exists(WhisperCli);
+    public static bool DemucsAvailable => File.Exists(Demucs);
 
     /// <summary>
     /// whisper-cli.exe 和 ffmpeg.exe 用 MSVC 编译，依赖 VC++ Runtime DLL。

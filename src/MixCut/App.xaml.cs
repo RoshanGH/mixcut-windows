@@ -68,11 +68,19 @@ public partial class App : Application
         // v0.3.1 对齐：启动期版本检测（GitHub 优先 / Gitee 容灾）
         services.AddSingleton<Services.UpdateChecker.UpdateChecker>();
 
+        // v0.5.0 分镜级 AI 配音：分离 / 克隆 / 合成 / 对齐 / 改写（单例）。
+        services.AddSingleton<Services.Dubbing.VocalSeparationService>();
+        services.AddSingleton<Services.Dubbing.VoiceCloneService>();
+        services.AddSingleton<Services.Dubbing.CloneTtsClient>();
+        services.AddSingleton<Services.Dubbing.DubAudioFinalizer>();
+        services.AddSingleton<Services.Dubbing.ScriptRewriteService>();
+
         // ViewModel（单例，主窗口持有）。
         services.AddSingleton<ProjectViewModel>();
         services.AddSingleton<ImportViewModel>();
         services.AddSingleton<SegmentLibraryViewModel>();
         services.AddSingleton<SchemeViewModel>();
+        services.AddSingleton<DubbingViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<UpdateBannerViewModel>();
 
@@ -298,6 +306,65 @@ public partial class App : Application
         Console.WriteLine(line);
     }
 
+    /// <summary>
+    /// v0.5.0 配音自测：`--selftest-dub` 对库里第一个「有带台词分镜」的视频跑一遍
+    /// RewriteAll 全链路（分离→克隆→改写→合成对齐），把 [DubDiag] 计数打到日志+stdout 后退出。
+    /// 构建机用真实 qwen key 验证服务引擎（§自我验证铁律）。正常启动不受影响。
+    /// </summary>
+    private async Task RunDubSelfTestAsync()
+    {
+        try
+        {
+            var factory = _host.Services.GetRequiredService<IDbContextFactory<MixCutDbContext>>();
+            var dub = _host.Services.GetRequiredService<DubbingViewModel>();
+
+            // 测试兜底：未配置千问 key 时，从环境变量 DASHSCOPE_API_KEY 种入（仅自测路径，生产不受影响）。
+            var settings = _host.Services.GetRequiredService<AppSettings>();
+            var envKey = Environment.GetEnvironmentVariable("DASHSCOPE_API_KEY");
+            if (!settings.HasApiKey(Services.AI.AIProviderType.Qwen) && !string.IsNullOrEmpty(envKey))
+            {
+                settings.SaveApiKey(envKey, Services.AI.AIProviderType.Qwen);
+                settings.ActiveProvider = Services.AI.AIProviderType.Qwen;
+                EmitSelfTest("[DubSelfTest] 已从环境变量种入千问 key（仅测试）");
+            }
+
+            Guid videoId = Guid.Empty;
+            string videoName = "";
+            int textSegs = 0;
+            using (var db = factory.CreateDbContext())
+            {
+                var v = db.Videos
+                    .Where(v => v.Segments.Any(s => s.Text != "" && !s.IsVoiceLocked))
+                    .OrderByDescending(v => v.Segments.Count(s => s.Text != ""))
+                    .FirstOrDefault();
+                if (v is not null)
+                {
+                    videoId = v.Id;
+                    videoName = v.Name;
+                    textSegs = db.Segments.Count(s => s.VideoId == v.Id && s.Text != "" && !s.IsVoiceLocked);
+                }
+            }
+            if (videoId == Guid.Empty)
+            {
+                EmitSelfTest("[DubSelfTest] NO_DATA 库里没有带台词分镜的视频");
+                return;
+            }
+
+            EmitSelfTest($"[DubSelfTest] START video='{videoName}' 可重配分镜={textSegs} 变体数={dub.VariantCount}");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await dub.RewriteAllAsync(videoId);
+            sw.Stop();
+
+            var produced = await dub.EffectiveVariantCountAsync(videoId);
+            EmitSelfTest($"[DubSelfTest] DONE 有效变体={produced} 耗时={sw.Elapsed.TotalSeconds:F0}s err={dub.ErrorMessage ?? "无"}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[DubSelfTest] 异常");
+            Console.WriteLine("[DubSelfTest] EXCEPTION " + ex.Message);
+        }
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         // 隐藏自测模式：`--selftest-preview <视频>` 离屏跑一遍 FfmpegFramePlayer 渲染，
@@ -476,6 +543,14 @@ public partial class App : Application
         if (Array.IndexOf(e.Args, "--selftest-narrative") >= 0)
         {
             await RunNarrativeSelfTestAsync();
+            Shutdown();
+            return;
+        }
+
+        // v0.5.0 配音自测：`--selftest-dub` 对真实视频跑一遍 RewriteAll 全链路后退出（构建机验证服务引擎）。
+        if (Array.IndexOf(e.Args, "--selftest-dub") >= 0)
+        {
+            await RunDubSelfTestAsync();
             Shutdown();
             return;
         }

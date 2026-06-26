@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly ExportService _exportService;
     private readonly BatchSegmentExportService _batchExportService;
     private readonly ASRService _asrService;
+    private readonly DubbingViewModel _dubbingVm;
     private WelcomeView? _welcome;
     private readonly Dictionary<NavigationItem, FrameworkElement> _views = new();
     /// <summary>记录每个视图上次 LoadProject 的 projectId，避免 nav 切换时重复加载。</summary>
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
         MainViewModel vm, AppSettings settings,
         ExportService exportService, BatchSegmentExportService batchExportService,
         ASRService asrService,
+        DubbingViewModel dubbingVm,
         UpdateBannerViewModel updateBannerVm)
     {
         _vm = vm;
@@ -33,6 +35,7 @@ public partial class MainWindow : Window
         _exportService = exportService;
         _batchExportService = batchExportService;
         _asrService = asrService;
+        _dubbingVm = dubbingVm;
         InitializeComponent();
 
         // 初始化全局 Toast 容器（任何代码都可调 ToastService.Show 弹出反馈）
@@ -52,6 +55,9 @@ public partial class MainWindow : Window
         // v0.5.0 修复：素材分析完写入 segments 后，失效依赖该数据的视图缓存。
         // 否则用户切到 SegmentLibrary / Schemes 时仍看到旧数据，必须重启应用才能刷新。
         _vm.ImportVM.SegmentsChanged += OnSegmentsChanged;
+
+        // v0.5.0 配音：变体增删/生成后失效 SegmentLibrary/Schemes/Export/Overview 缓存（对齐 OnSegmentsChanged）。
+        _dubbingVm.DubsChanged += OnDubsChanged;
 
         if (_settings.LastSelectedProjectId is { } lastId)
         {
@@ -214,6 +220,27 @@ public partial class MainWindow : Window
             _viewLastLoadedProjectId.Remove(NavigationItem.Overview);
             if (_vm.SelectedNavItem is NavigationItem.SegmentLibrary
                 or NavigationItem.Schemes
+                or NavigationItem.Overview)
+            {
+                UpdateContent();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 配音变体增删/生成后失效 Schemes/Export/Overview 缓存（它们显示变体数/组合数）。
+    /// 不动 SegmentLibrary：配音 UI（设置条计数 + 变体检视器）由 DubbingViewModel 自己刷新，
+    /// 强制全量重载反而会打断正在进行的配音交互。
+    /// </summary>
+    private void OnDubsChanged()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            _viewLastLoadedProjectId.Remove(NavigationItem.Schemes);
+            _viewLastLoadedProjectId.Remove(NavigationItem.Export);
+            _viewLastLoadedProjectId.Remove(NavigationItem.Overview);
+            if (_vm.SelectedNavItem is NavigationItem.Schemes
+                or NavigationItem.Export
                 or NavigationItem.Overview)
             {
                 UpdateContent();

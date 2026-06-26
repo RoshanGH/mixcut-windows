@@ -29,8 +29,24 @@ public static class AppPaths
     /// </summary>
     public static string WhisperModelsDirectory { get; } = ResolveWhisperModelsDir();
 
+    /// <summary>
+    /// Demucs 人声分离模型目录（v0.5.0 配音）：优先 <c>%LOCALAPPDATA%\MixCut\demucs-models</c>，
+    /// 回退到 Root\demucs-models。模型 ~80MB，放本地（非漫游）。
+    /// </summary>
+    public static string DemucsModelsDirectory { get; } = ResolveLocalFirstDir("demucs-models");
+
+    /// <summary>对齐后的配音音频（m4a）目录：<c>&lt;Root&gt;\Dubs</c>。</summary>
+    public static string DubAudioDirectory { get; } = CreateDir(Path.Combine(Root, "Dubs"));
+
     /// <summary>SQLite 数据库文件路径：<c>&lt;Root&gt;\mixcut.db</c>。</summary>
     public static string DatabaseFile { get; } = Path.Combine(Root, "mixcut.db");
+
+    /// <summary>
+    /// 某视频的人声/BGM 分离产物目录（按内容哈希缓存，整轨只分离一次）：
+    /// <c>&lt;Root&gt;\Stems\{videoHash}</c>。
+    /// </summary>
+    public static string StemsDirectory(string videoHash) =>
+        CreateDir(Path.Combine(Root, "Stems", videoHash));
 
     // ---- 内部实现 ----
 
@@ -90,6 +106,16 @@ public static class AppPaths
 
         // 回退到 Root\whisper-models（跟主数据目录走相同 tier）
         return CreateDir(Path.Combine(Root, "whisper-models"));
+    }
+
+    /// <summary>优先 <c>%LOCALAPPDATA%\MixCut\{sub}</c>，不可写时回退 <c>Root\{sub}</c>（大文件目录通用）。</summary>
+    private static string ResolveLocalFirstDir(string sub)
+    {
+        var localDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MixCut", sub);
+        if (TryUse(localDir)) return CreateDir(localDir);
+        return CreateDir(Path.Combine(Root, sub));
     }
 
     private static string CreateDir(string path)
