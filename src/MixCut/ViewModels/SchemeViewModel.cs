@@ -95,6 +95,8 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         // 通过单独预加载 Videos 让跟踪上下文自动 fix-up segment.Video。
         var strategies = _context.Strategies
             .Include(s => s.Schemes).ThenInclude(sc => sc.SchemeSegments).ThenInclude(ss => ss.Segment!)
+                // v0.5.0：带上各分镜的配音变体，供方案选变体 / 配音组合导出用 EffectiveDubVariants。
+                .ThenInclude(seg => seg.SegmentDubs)
             // P0-8：Schemes×SchemeSegments 嵌套集合 SingleQuery 会笛卡尔放大；拆分查询更快、结果一致。
             // 仍是跟踪查询，identity map 保证 segment.Video 反向 fix-up（见上）照常工作。
             .AsSplitQuery()

@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private readonly BatchSegmentExportService _batchExportService;
     private readonly ASRService _asrService;
     private readonly DubbingViewModel _dubbingVm;
+    private readonly Services.Dubbing.DubExportService _dubExport;
     private WelcomeView? _welcome;
     private readonly Dictionary<NavigationItem, FrameworkElement> _views = new();
     /// <summary>记录每个视图上次 LoadProject 的 projectId，避免 nav 切换时重复加载。</summary>
@@ -28,6 +29,7 @@ public partial class MainWindow : Window
         ExportService exportService, BatchSegmentExportService batchExportService,
         ASRService asrService,
         DubbingViewModel dubbingVm,
+        Services.Dubbing.DubExportService dubExport,
         UpdateBannerViewModel updateBannerVm)
     {
         _vm = vm;
@@ -36,6 +38,7 @@ public partial class MainWindow : Window
         _batchExportService = batchExportService;
         _asrService = asrService;
         _dubbingVm = dubbingVm;
+        _dubExport = dubExport;
         InitializeComponent();
 
         // 初始化全局 Toast 容器（任何代码都可调 ToastService.Show 弹出反馈）
@@ -177,7 +180,7 @@ public partial class MainWindow : Window
                 ? new SegmentLibraryViewV2(_vm.SegmentVM, _batchExportService, _settings)
                 : (FrameworkElement)new SegmentLibraryView(_vm.SegmentVM, _batchExportService, _settings),
             NavigationItem.Schemes => new SchemesView(_vm.SchemeVM, _vm.SegmentVM),
-            NavigationItem.Export => new ExportView(_vm.SchemeVM, _exportService, _settings),
+            NavigationItem.Export => new ExportView(_vm.SchemeVM, _exportService, _dubExport, _settings),
             _ => new ProjectOverviewView(_vm, NavigateTo, RefreshAfterProjectChange),
         };
         _views[item] = view;

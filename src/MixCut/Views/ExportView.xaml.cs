@@ -17,6 +17,7 @@ public partial class ExportView : UserControl, IProjectView
 {
     private readonly SchemeViewModel _schemeVM;
     private readonly ExportService _exportService;
+    private readonly Services.Dubbing.DubExportService _dubExport;
     private readonly AppSettings _settings;
     private string? _lastOutputDir;
 
@@ -27,10 +28,12 @@ public partial class ExportView : UserControl, IProjectView
     /// <summary>用户勾选的待导出方案 ID 集合。LoadProject 时默认全选当前项目所有方案。</summary>
     private readonly HashSet<Guid> _selectedSchemeIds = new();
 
-    public ExportView(SchemeViewModel schemeVM, ExportService exportService, AppSettings settings)
+    public ExportView(SchemeViewModel schemeVM, ExportService exportService,
+        Services.Dubbing.DubExportService dubExport, AppSettings settings)
     {
         _schemeVM = schemeVM;
         _exportService = exportService;
+        _dubExport = dubExport;
         _settings = settings;
         InitializeComponent();
 
@@ -304,7 +307,37 @@ public partial class ExportView : UserControl, IProjectView
             ExportAllButton.Content = $"📦  导出选中的 {n} 个";
             ExportAllButton.IsEnabled = true;
         }
+        UpdateDubButtonText();
         UpdateSelectedCountLabel();
+    }
+
+    /// <summary>配音组合导出按钮：N = 选中方案的组合数之和（每方案按 SchemeComboPlanner 上限封顶）。</summary>
+    private void UpdateDubButtonText()
+    {
+        if (ExportDubButton is null) return;
+        var selected = _schemeVM.Schemes.Where(s => _selectedSchemeIds.Contains(s.Id)).ToList();
+        var totalCombos = 0;
+        var anyDub = false;
+        foreach (var s in selected)
+        {
+            var feasible = Services.Dubbing.SchemeComboPlanner.FeasibleCount(s);
+            totalCombos += Math.Min(feasible, Services.Dubbing.SchemeComboPlanner.MaxCombos);
+            // 该方案有可用配音变体（feasible > 分镜全锁定/无变体时的 1）→ 才算「有配音可导」
+            if (s.OrderedSegments.Any(ss => ss.Segment is { IsVoiceLocked: false } seg && seg.EffectiveDubVariants.Count > 0))
+            {
+                anyDub = true;
+            }
+        }
+        if (selected.Count == 0 || !anyDub)
+        {
+            ExportDubButton.Content = "🎤  导出配音组合";
+            ExportDubButton.IsEnabled = false;
+        }
+        else
+        {
+            ExportDubButton.Content = $"🎤  导出配音组合（共 {totalCombos} 条）";
+            ExportDubButton.IsEnabled = true;
+        }
     }
 
     private ExportConfig BuildConfig() => new()
@@ -521,6 +554,158 @@ public partial class ExportView : UserControl, IProjectView
                 ProgressStatusText.Text = $"已完成 {done}/{tasks.Count}";
                 ProgressDetailText.Text = string.IsNullOrEmpty(inProgress)
                     ? string.Empty : "进行中：" + inProgress;
+            });
+        }
+    }
+
+    // ---- 配音组合导出（v0.5.0）：跨选中方案笛卡尔积展开成 N 条，逐条出片 ----
+
+    private async void OnExportDubCombosClick(object sender, RoutedEventArgs e)
+    {
+        var snapshotIds = new HashSet<Guid>(_selectedSchemeIds);
+        var schemes = _schemeVM.Schemes.Where(s => snapshotIds.Contains(s.Id)).ToList();
+        if (schemes.Count == 0) return;
+
+        // 展开每个方案的全部配音组合（笛卡尔积，每方案封顶 MaxCombos）。
+        var jobs = new List<(string Name, Services.Dubbing.DubExportInput Input, string FileBase)>();
+        var truncatedSchemes = 0;
+        foreach (var scheme in schemes)
+        {
+            var plan = Services.Dubbing.SchemeComboPlanner.Build(scheme);
+            if (plan.Truncated) truncatedSchemes++;
+            var strategyName = SanitizeFileName(scheme.Strategy?.Name ?? "未分组");
+            var schemeName = SanitizeFileName(scheme.Name);
+            foreach (var combo in plan.Combos)
+            {
+                var input = Services.Dubbing.DubExportInput.From(scheme, combo.Choices);
+                if (input is null) continue;
+                jobs.Add(($"{scheme.Name} {combo.NameSuffix}", input, $"{strategyName}_{schemeName}{SanitizeFileName(combo.NameSuffix)}"));
+            }
+        }
+
+        if (jobs.Count == 0)
+        {
+            MessageBox.Show("没有可导出的配音组合（请先在分镜库「克隆并改写配音」生成变体）",
+                "无法导出", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // 确认弹窗（PRD §7.2）：先告知将生成多少条。
+        var truncNote = truncatedSchemes > 0 ? $"\n（有 {truncatedSchemes} 个方案组合数超上限，已按每方案前 {Services.Dubbing.SchemeComboPlanner.MaxCombos} 条截取）" : "";
+        var confirm = MessageBox.Show(
+            $"将生成 {jobs.Count} 条视频\n\n选中 {schemes.Count} 个方案，画面不变，按每个分镜的「原声 + 各改写版」全部排列组合逐条生成。{truncNote}",
+            "导出配音组合", MessageBoxButton.OKCancel, MessageBoxImage.Information);
+        if (confirm != MessageBoxResult.OK) return;
+
+        var dialog = new OpenFolderDialog { Title = "选择输出文件夹" };
+        if (!string.IsNullOrEmpty(_settings.LastExportDirForSchemes) && Directory.Exists(_settings.LastExportDirForSchemes))
+        {
+            dialog.InitialDirectory = _settings.LastExportDirForSchemes;
+        }
+        if (dialog.ShowDialog() != true) return;
+        var outputDir = dialog.FolderName;
+        _lastOutputDir = outputDir;
+        _settings.LastExportDirForSchemes = outputDir;
+
+        var config = BuildConfig();
+        // 落地输出路径 + 文件名冲突检查。
+        var tasks = jobs.Select(j => (j.Name, j.Input, Path.Combine(outputDir, j.FileBase + ".mp4"))).ToList();
+        var conflicts = tasks.Where(t => File.Exists(t.Item3)).ToList();
+        if (conflicts.Count > 0)
+        {
+            var preview = string.Join("\n", conflicts.Take(5).Select(c => "• " + Path.GetFileName(c.Item3)));
+            if (conflicts.Count > 5) preview += $"\n…还有 {conflicts.Count - 5} 个";
+            if (MessageBox.Show($"以下 {conflicts.Count} 个文件已存在，继续会覆盖：\n\n{preview}\n\n确定覆盖吗？",
+                    "文件已存在", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+            {
+                return;
+            }
+        }
+
+        // 自适应并发：配音导出每条都是多分镜渲染（较重），按硬件 + 最高分辨率封顶。
+        var maxPixels = tasks.Max(t => (long)t.Input.MaxWidth * Math.Max(1, t.Input.MaxHeight));
+        if (maxPixels <= 0) maxPixels = 1080L * 1920L;
+        var concurrency = Infrastructure.ConcurrencyPolicy.MaxExportConcurrency(tasks.Count, maxPixels);
+
+        CompletePanel.Visibility = Visibility.Collapsed;
+        ErrorPanel.Visibility = Visibility.Collapsed;
+        ProgressSection.Visibility = Visibility.Visible;
+        ProgressTitle.Text = $"导出配音组合（共 {tasks.Count} 条 · {concurrency} 路并行）";
+        ExportAllButton.IsEnabled = false;
+        ExportDubButton.IsEnabled = false;
+
+        _exportCts?.Dispose();
+        _exportCts = new CancellationTokenSource();
+        var token = _exportCts.Token;
+        CancelExportButton.IsEnabled = true;
+
+        var success = 0;
+        var errors = new List<string>();
+        var completed = 0;
+        var canceled = false;
+        var current = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
+
+        using var semaphore = new SemaphoreSlim(concurrency);
+        var exportJobs = tasks.Select(async (task, slot) =>
+        {
+            await semaphore.WaitAsync(token);
+            try
+            {
+                current[slot] = task.Name;
+                Report();
+                await _dubExport.ExportAsync(task.Input, task.Item3, config, _ => Report(), token);
+                Interlocked.Increment(ref success);
+            }
+            catch (OperationCanceledException) { canceled = true; }
+            catch (Exception ex)
+            {
+                lock (errors) { errors.Add($"{task.Name}: {ex.Message}"); }
+            }
+            finally
+            {
+                current.TryRemove(slot, out _);
+                Interlocked.Increment(ref completed);
+                Report();
+                semaphore.Release();
+            }
+        });
+
+        try { await Task.WhenAll(exportJobs); }
+        catch (OperationCanceledException) { canceled = true; }
+
+        ProgressSection.Visibility = Visibility.Collapsed;
+        CancelExportButton.IsEnabled = false;
+        UpdateExportButtonText();
+
+        if (canceled)
+        {
+            Components.ToastService.Show($"已取消（已完成 {success}/{tasks.Count} 条）", Components.ToastStyle.Warning);
+        }
+        else if (errors.Count == 0)
+        {
+            CompletePanel.Visibility = Visibility.Visible;
+            CompleteText.Text = $"共导出 {success} 条配音视频\n输出目录：{outputDir}";
+            Components.ToastService.Show($"✓ 配音导出完成 {success} 条", Components.ToastStyle.Success);
+        }
+        else
+        {
+            ErrorPanel.Visibility = Visibility.Visible;
+            ErrorText.Text = $"成功 {success}/{tasks.Count} 条：\n" + string.Join("\n", errors.Take(5))
+                             + (errors.Count > 5 ? $"\n…还有 {errors.Count - 5} 个错误" : "");
+            Components.ToastService.Show(success > 0 ? $"⚠ 部分失败：成功 {success}/{tasks.Count}" : "配音导出全部失败",
+                success > 0 ? Components.ToastStyle.Warning : Components.ToastStyle.Error);
+        }
+
+        void Report()
+        {
+            var done = completed;
+            var inProgress = string.Join("、", current.Values.Take(2));
+            if (current.Count > 2) inProgress += $" 等 {current.Count} 个";
+            Dispatcher.Invoke(() =>
+            {
+                ProgressBar.Value = (double)done / tasks.Count;
+                ProgressStatusText.Text = $"已完成 {done}/{tasks.Count}";
+                ProgressDetailText.Text = string.IsNullOrEmpty(inProgress) ? "" : "进行中：" + inProgress;
             });
         }
     }
