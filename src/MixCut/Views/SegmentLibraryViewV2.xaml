@@ -262,6 +262,45 @@
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
+                                <!-- 配音设置条（v0.5.0，每视频独立）：状态区 + 变体数 stepper + 克隆并改写按钮。
+                                     左对齐（分镜 WrapPanel 会把组撑宽，右对齐内容会被推出可见区外）。 -->
+                                <Grid Margin="0,0,0,10" MinHeight="30" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                        <!-- 主按钮 -->
+                                        <Button Content="{Binding DubMainButtonText}" Command="{Binding RewriteAllCommand}"
+                                                IsEnabled="{Binding IsNotDubBusy}" Cursor="Hand"
+                                                Background="{StaticResource AccentBlueBrush}" Foreground="White"
+                                                BorderThickness="0" Padding="12,6" FontSize="12" FontWeight="SemiBold"
+                                                VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <!-- 变体数 stepper ×N -->
+                                        <Border Background="{StaticResource BgSubtleBrush}" CornerRadius="6" Padding="2"
+                                                Margin="0,0,10,0" VerticalAlignment="Center"
+                                                IsEnabled="{Binding IsNotDubBusy}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Content="−" Style="{StaticResource FrameStepButtonStyle}"
+                                                        ToolTip="减少变体数" Command="{Binding DecVariantCommand}" />
+                                                <TextBlock VerticalAlignment="Center" MinWidth="28" TextAlignment="Center"
+                                                           FontSize="11" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}">
+                                                    <Run Text="×" /><Run Text="{Binding VariantCount, Mode=OneWay}" />
+                                                </TextBlock>
+                                                <Button Content="+" Style="{StaticResource FrameStepButtonStyle}"
+                                                        ToolTip="增加变体数（每分镜产出几套改写版）" Command="{Binding IncVariantCommand}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <!-- 忙碌进度 -->
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                                    Visibility="{Binding IsDubBusy, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Text="⏳" FontSize="12" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding DubProgress}" FontSize="11"
+                                                       Foreground="{StaticResource AccentBlueBrush}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <!-- 空闲状态「✓ N 个变体」 -->
+                                        <TextBlock Text="{Binding DubStatusText}" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource SuccessGreenBrush}" VerticalAlignment="Center"
+                                                   Visibility="{Binding IsDubBusy, Converter={StaticResource InverseBoolToVisibility}}" />
+                                    </StackPanel>
+                                </Grid>
                                 <!-- 该组分镜卡片：WrapPanel 排列（每组小规模，不需要 VirtualizingWrapPanel） -->
                                 <ItemsControl ItemsSource="{Binding Segments}">
                                     <ItemsControl.ItemsPanel>
@@ -641,6 +680,181 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
+
+            <!-- ========== 配音变体检视器（v0.5.0）：单击分镜后右侧覆盖弹出（drawer） ==========
+                 ⚠ 已知待修：本面板可视渲染未通过 —— 该 content 区内「右对齐/Grid 第二列」均被推到屏幕外
+                 （左对齐的配音设置条正常）。VM 逻辑已实测可用（日志 [DubDiag] 检视器加载 seg=.. variants=.. state=..）。
+                 后续修复方向：改 Popup 锚定可见右缘，或排查 content 区水平测量为何无界。 -->
+            <Border HorizontalAlignment="Right" Width="340"
+                    DataContext="{Binding DubInspector}"
+                    Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}"
+                    Background="#16161A" CornerRadius="10">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.4" Color="Black" />
+                </Border.Effect>
+                <DockPanel Margin="14,12">
+                    <!-- 头部 -->
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🎙" FontSize="14" Margin="0,0,6,0" />
+                            <TextBlock Text="配音变体池" FontSize="14" FontWeight="SemiBold" Foreground="White" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding HeaderSubtitle}" FontSize="11" Foreground="#909090" Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <!-- 保留原声态 -->
+                    <StackPanel DockPanel.Dock="Top" Margin="0,40,0,0" HorizontalAlignment="Center"
+                                Visibility="{Binding IsLocked, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="🔒" FontSize="34" HorizontalAlignment="Center" />
+                        <TextBlock Text="保留原声（明星出镜锁定，不参与配音）" FontSize="12" Foreground="#B0B0B0"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0" MaxWidth="260" />
+                    </StackPanel>
+
+                    <!-- 空白态 -->
+                    <StackPanel DockPanel.Dock="Top" Margin="0,30,0,0" HorizontalAlignment="Center"
+                                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="🪄" FontSize="34" HorizontalAlignment="Center" />
+                        <TextBlock Text="还没有改写版。点视频上方「克隆并改写配音」批量生成，或手动写一版。"
+                                   FontSize="12" Foreground="#B0B0B0" TextWrapping="Wrap" TextAlignment="Center"
+                                   Margin="0,8,0,12" MaxWidth="260" />
+                        <Button Content="+ 手动添加一版（自己写台词）" Command="{Binding AddManualCommand}"
+                                IsEnabled="{Binding IsNotBusy}" Cursor="Hand" Padding="10,6" FontSize="12"
+                                Background="{StaticResource AccentBlueBrush}" Foreground="White" BorderThickness="0" />
+                    </StackPanel>
+
+                    <!-- 变体池态 -->
+                    <Grid Visibility="{Binding IsPool, Converter={StaticResource BoolToVisibility}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 重新改写栏 -->
+                        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                            <Button Content="↻ 重新改写本分镜" Command="{Binding RewriteSegmentCommand}"
+                                    IsEnabled="{Binding IsNotBusy}" Cursor="Hand" Padding="8,5" FontSize="12"
+                                    HorizontalAlignment="Stretch" Background="#2A2A33" Foreground="White" BorderThickness="0" />
+                            <TextBlock Text="改了原台词后，点此用新原文重写本分镜" FontSize="10"
+                                       Foreground="#808080" Margin="0,4,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <!-- 变体卡列表 -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Variants}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#1E1E24" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                                            <StackPanel>
+                                                <!-- 卡头：字母胶囊 + 字数提示 + 编辑/删除 -->
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Grid.Column="0" Background="{StaticResource AccentBlueBrush}"
+                                                            CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
+                                                        <TextBlock Foreground="White" FontSize="11" FontWeight="Bold">
+                                                            <Run Text="改写版 " /><Run Text="{Binding VariantLetter, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                    </Border>
+                                                    <TextBlock Grid.Column="1" Text="{Binding CharCountText}" FontSize="10"
+                                                               VerticalAlignment="Center" Margin="8,0,0,0"
+                                                               ToolTip="{Binding CharCountHint}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="#909090" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding CharCountLevel}" Value="warn">
+                                                                        <Setter Property="Foreground" Value="#FF6B6B" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding CharCountLevel}" Value="short">
+                                                                        <Setter Property="Foreground" Value="#FFA94D" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                                Visibility="{Binding IsEditing, Converter={StaticResource InverseBoolToVisibility}}">
+                                                        <Button Content="✏" Command="{Binding EditCommand}" ToolTip="编辑台词"
+                                                                Background="Transparent" Foreground="#B0B0B0" BorderThickness="0"
+                                                                Cursor="Hand" Padding="4,0" FontSize="12" />
+                                                        <Button Content="🗑" Command="{Binding DeleteCommand}" ToolTip="删除此版"
+                                                                Background="Transparent" Foreground="#B0B0B0" BorderThickness="0"
+                                                                Cursor="Hand" Padding="4,0" FontSize="12" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
+                                                        <Button Content="✕" Command="{Binding CancelEditCommand}" ToolTip="取消"
+                                                                Background="Transparent" Foreground="#B0B0B0" BorderThickness="0"
+                                                                Cursor="Hand" Padding="4,0" FontSize="12" />
+                                                        <Button Content="✓" Command="{Binding SaveEditCommand}" ToolTip="保存并重新生成"
+                                                                Background="Transparent" Foreground="{StaticResource SuccessGreenBrush}"
+                                                                BorderThickness="0" Cursor="Hand" Padding="4,0" FontSize="12" />
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- 台词正文（显示态） -->
+                                                <TextBlock Text="{Binding RewrittenText}" Foreground="#E0E0E0" FontSize="12"
+                                                           TextWrapping="Wrap" Margin="0,8,0,0"
+                                                           Visibility="{Binding IsEditing, Converter={StaticResource InverseBoolToVisibility}}" />
+                                                <!-- 台词正文（编辑态） -->
+                                                <TextBox Text="{Binding EditingText, UpdateSourceTrigger=PropertyChanged}"
+                                                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" Margin="0,8,0,0"
+                                                         Background="#0E0E12" Foreground="White" BorderBrush="#3A3A44"
+                                                         Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
+
+                                                <!-- 生成/播放控件 -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                                            Visibility="{Binding IsEditing, Converter={StaticResource InverseBoolToVisibility}}">
+                                                    <!-- 未生成：生成按钮 -->
+                                                    <Button Content="生成" Command="{Binding GenerateCommand}"
+                                                            Visibility="{Binding HasAudio, Converter={StaticResource InverseBoolToVisibility}}"
+                                                            Background="{StaticResource AccentBlueBrush}" Foreground="White" BorderThickness="0"
+                                                            Cursor="Hand" Padding="10,4" FontSize="11" />
+                                                    <!-- 已生成：播放 + 重新生成 + 时长 -->
+                                                    <Button Command="{Binding PlayCommand}"
+                                                            Visibility="{Binding HasAudio, Converter={StaticResource BoolToVisibility}}"
+                                                            Background="{StaticResource SuccessGreenBrush}" Foreground="White" BorderThickness="0"
+                                                            Cursor="Hand" Padding="10,4" FontSize="11" Margin="0,0,6,0">
+                                                        <TextBlock>
+                                                            <Run Text="▶ 试听" />
+                                                        </TextBlock>
+                                                    </Button>
+                                                    <Button Content="↻" Command="{Binding GenerateCommand}" ToolTip="重新生成配音"
+                                                            Visibility="{Binding HasAudio, Converter={StaticResource BoolToVisibility}}"
+                                                            Background="#2A2A33" Foreground="#B0B0B0" BorderThickness="0"
+                                                            Cursor="Hand" Padding="8,4" FontSize="11" Margin="0,0,6,0" />
+                                                    <TextBlock Text="{Binding DurationText}" FontSize="11" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasAudio, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="#FFA94D" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding DurationAligned}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource SuccessGreenBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <!-- 手动添加一版 -->
+                        <Button Grid.Row="2" Content="+ 手动添加一版" Command="{Binding AddManualCommand}"
+                                IsEnabled="{Binding IsNotBusy}" Cursor="Hand" Margin="0,8,0,0" Padding="8,5" FontSize="12"
+                                HorizontalAlignment="Stretch" Background="#2A2A33" Foreground="White" BorderThickness="0" />
+                    </Grid>
+                </DockPanel>
+            </Border>
         </Grid>
     </DockPanel>
 </UserControl>

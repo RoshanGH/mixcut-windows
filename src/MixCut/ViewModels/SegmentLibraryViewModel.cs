@@ -46,6 +46,12 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private Segment? _selectedSegment;
 
+    /// <summary>配音变体检视器 VM（v0.5.0）；单击分镜后由 SelectCard 加载。DI 注入 DubbingViewModel 时非空。</summary>
+    public DubVariantInspectorViewModel? DubInspector { get; private set; }
+
+    /// <summary>配音编排（v0.5.0）；RebuildGroups 传给各视频组的「配音设置条」。</summary>
+    private DubbingViewModel? _dubbing;
+
     [ObservableProperty]
     private bool _sortByQuality;
 
@@ -199,11 +205,14 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
     public SegmentLibraryViewModel(
         IDbContextFactory<MixCutDbContext> dbFactory,
         Services.VideoProcessing.FFmpegRunner ffmpeg,
+        DubbingViewModel dubbing,
         ILogger<SegmentLibraryViewModel> logger)
     {
         _dbFactory = dbFactory;
         _ffmpeg = ffmpeg;
+        _dubbing = dubbing;
         _logger = logger;
+        DubInspector = new DubVariantInspectorViewModel(dubbing);
     }
 
     /// <summary>
@@ -262,6 +271,10 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
     /// <summary>加载项目的所有分镜。</summary>
     public void LoadSegments(Project project)
     {
+        // 切项目铁律：重置单选 + 配音检视器选中态，不让旧项目状态串过来。
+        _selectedCard = null;
+        DubInspector?.Clear();
+
         _context?.Dispose();
         _context = _dbFactory.CreateDbContext();
         CurrentProject = project;

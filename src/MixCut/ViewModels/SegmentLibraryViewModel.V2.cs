@@ -82,7 +82,7 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
                 card.SequenceNumber = NumberFor(seg);
                 cards.Add(card);
             }
-            newGroups.Add(new VideoGroupViewModel(video, cards));
+            newGroups.Add(new VideoGroupViewModel(video, cards, _dubbing));
         }
 
         // 清理已不需要的 CardVM
@@ -206,7 +206,7 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
                 card.SequenceNumber = NumberFor(seg);
                 cards.Add(card);
             }
-            var group = new VideoGroupViewModel(video, cards);
+            var group = new VideoGroupViewModel(video, cards, _dubbing);
             Groups.Add(group);
 
             // 让 WPF 渲染该组卡片（Background 优先级 = 等渲染周期完）
@@ -438,6 +438,8 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
         card.IsSelected = true;
         _selectedCard = card;
         SelectedSegment = card.Segment;
+        // v0.5.0：单击分镜 → 右侧配音变体检视器加载该分镜。
+        _ = DubInspector?.LoadAsync(card.Segment);
     }
 
 }
