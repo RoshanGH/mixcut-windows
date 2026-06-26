@@ -74,6 +74,7 @@ public partial class App : Application
         services.AddSingleton<Services.Dubbing.CloneTtsClient>();
         services.AddSingleton<Services.Dubbing.DubAudioFinalizer>();
         services.AddSingleton<Services.Dubbing.ScriptRewriteService>();
+        services.AddSingleton<Services.Dubbing.DubExportService>();
 
         // ViewModel（单例，主窗口持有）。
         services.AddSingleton<ProjectViewModel>();
@@ -365,6 +366,89 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// v0.5.0 配音组合导出自测：`--selftest-dubexport` 对库里配音变体最多的视频，按其分镜(优先选改写A、
+    /// 否则原声)构造一条配音成片导出，验证滤镜图/字幕渲染/-ac2 声道统一/concat/首帧归零/BGM 混音整链路。
+    /// </summary>
+    private async Task RunDubExportSelfTestAsync()
+    {
+        try
+        {
+            var factory = _host.Services.GetRequiredService<IDbContextFactory<MixCutDbContext>>();
+            var exporter = _host.Services.GetRequiredService<Services.Dubbing.DubExportService>();
+
+            List<Models.Segment> segs;
+            int vw, vh;
+            string videoName;
+            using (var db = factory.CreateDbContext())
+            {
+                var v = db.Videos
+                    .Where(v => v.Segments.Any(s => s.SegmentDubs.Any(d => d.AudioFilePath != null)))
+                    .OrderByDescending(v => v.Segments.SelectMany(s => s.SegmentDubs).Count(d => d.AudioFilePath != null))
+                    .FirstOrDefault();
+                if (v is null) { EmitSelfTest("[DubExportSelfTest] NO_DATA 无含已生成配音的视频"); return; }
+                videoName = v.Name; vw = v.Width; vh = v.Height;
+                segs = db.Segments
+                    .Include(s => s.Video)
+                    .Include(s => s.SegmentDubs)
+                    .Where(s => s.VideoId == v.Id)
+                    .OrderBy(s => s.StartFrame)
+                    .Take(4) // 取前 4 个分镜，控制自测时长
+                    .ToList();
+            }
+
+            // 构造 specs：有已生成变体的取首个(改写A)，否则原声。
+            var specs = new List<Services.Dubbing.DubSegmentSpec>();
+            foreach (var s in segs)
+            {
+                var fps = s.EffectiveFps > 0 ? s.EffectiveFps : 30;
+                var dub = s.EffectiveDubVariants.FirstOrDefault();
+                if (dub is not null && !string.IsNullOrEmpty(dub.AudioFilePath))
+                {
+                    var bgm = string.IsNullOrEmpty(s.Video?.ContentHash) ? null
+                        : System.IO.Path.Combine(AppPaths.StemsDirectory(s.Video!.ContentHash), "bgm.wav");
+                    specs.Add(new Services.Dubbing.DubSegmentSpec(
+                        s.Video!.LocalPath, s.StartFrame, s.EndFrame, fps,
+                        string.IsNullOrEmpty(dub.RewrittenText) ? s.Text : dub.RewrittenText,
+                        HasHardSubtitle: false, s.MaskStyleRaw, s.MaskRect,
+                        IsVoiceLocked: false, dub.AudioFilePath, dub.FreezePadFrames, dub.TrailingSilence,
+                        System.IO.File.Exists(bgm) ? bgm : null));
+                }
+                else
+                {
+                    specs.Add(new Services.Dubbing.DubSegmentSpec(
+                        s.Video!.LocalPath, s.StartFrame, s.EndFrame, fps, s.Text,
+                        false, s.MaskStyleRaw, s.MaskRect, IsVoiceLocked: true, null, 0, 0, null));
+                }
+            }
+
+            var dubbed = specs.Count(x => x.DubAudioPath != null);
+            EmitSelfTest($"[DubExportSelfTest] START video='{videoName}' 分镜={specs.Count}(配音={dubbed}/原声={specs.Count - dubbed})");
+
+            var input = new Services.Dubbing.DubExportInput(specs, vw, vh);
+            var outPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mixcut-dubexport-selftest.mp4");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await exporter.ExportAsync(input, outPath, onProgress: p =>
+                EmitSelfTest($"[DubExportSelfTest]   {p.Phase} {p.Progress:P0} {p.Description}"));
+            sw.Stop();
+
+            // 验证：文件存在 + 起始时间≈0 + 有音频
+            var exists = System.IO.File.Exists(outPath);
+            var size = exists ? new System.IO.FileInfo(outPath).Length : 0;
+            var ffprobe = Infrastructure.BundledBinaries.Ffprobe;
+            string Probe(string a) { try { var psi = new System.Diagnostics.ProcessStartInfo(ffprobe){RedirectStandardOutput=true,UseShellExecute=false,CreateNoWindow=true}; foreach(var x in a.Split(' ')) psi.ArgumentList.Add(x); var p=System.Diagnostics.Process.Start(psi)!; var o=p.StandardOutput.ReadToEnd().Trim(); p.WaitForExit(); return o; } catch { return "?"; } }
+            var start = Probe($"-v error -select_streams v:0 -show_entries stream=start_time -of csv=p=0 {outPath}");
+            var hasAudio = Probe($"-v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 {outPath}");
+            EmitSelfTest($"[DubExportSelfTest] DONE exists={exists} size={size / 1024}KB start_time={start} audio={hasAudio} 耗时={sw.Elapsed.TotalSeconds:F0}s → {outPath}");
+            EmitSelfTest("[DubExportSelfTest] 请用播放器/资源管理器缩略图确认 t=0 首帧非黑、各段都有声。");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[DubExportSelfTest] 异常");
+            Console.WriteLine("[DubExportSelfTest] EXCEPTION " + ex.Message);
+        }
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         // 隐藏自测模式：`--selftest-preview <视频>` 离屏跑一遍 FfmpegFramePlayer 渲染，
@@ -551,6 +635,14 @@ public partial class App : Application
         if (Array.IndexOf(e.Args, "--selftest-dub") >= 0)
         {
             await RunDubSelfTestAsync();
+            Shutdown();
+            return;
+        }
+
+        // v0.5.0 配音组合导出自测：`--selftest-dubexport` 导出一条配音成片后退出。
+        if (Array.IndexOf(e.Args, "--selftest-dubexport") >= 0)
+        {
+            await RunDubExportSelfTestAsync();
             Shutdown();
             return;
         }
