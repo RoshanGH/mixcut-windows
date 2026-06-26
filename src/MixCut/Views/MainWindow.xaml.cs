@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         // 初始化全局 Toast 容器（任何代码都可调 ToastService.Show 弹出反馈）
         MixCut.Views.Components.ToastService.Initialize(ToastHost);
 
+
         // v0.3.1：顶部更新 banner —— DataContext 注入 VM，fire-and-forget 触发静默检查（不阻塞 UI）
         UpdateBannerHost.DataContext = updateBannerVm;
         _ = updateBannerVm.CheckSilentlyAsync();
@@ -128,6 +129,13 @@ public partial class MainWindow : Window
                 _viewLastLoadedProjectId[_vm.SelectedNavItem] = project.Id;
             }
         }
+
+        // v0.5.0 配音：离开分镜库时收起右侧检视器 drawer（否则会浮在其它视图上）。
+        if (_vm.SelectedNavItem != NavigationItem.SegmentLibrary)
+        {
+            _vm.SegmentVM.DubInspector?.Clear();
+        }
+
         SetContentWithFade(view);
     }
 
