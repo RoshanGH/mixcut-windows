@@ -40,3 +40,6 @@ docs/superpowers/specs/*.draft.md
 
 # UI 优化临时截图/脚本（本地，不入库）
 .uiwork/
+
+# 配音烟测运行日志（运行产物）
+scripts/smoke/dubdiag.log
