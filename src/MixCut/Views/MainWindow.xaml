@@ -162,8 +162,10 @@
             </DockPanel>
         </Border>
 
-        <!-- 内容区 -->
-        <ContentControl Grid.Column="1" x:Name="ContentArea" />
+        <!-- 内容区。HorizontalContentAlignment=Stretch：把承载的视图约束到本列宽度，
+             否则视图(如分镜库 WrapPanel)会被无限宽测量、不换行、右侧内容(配音检视器)跑到屏幕外。 -->
+        <ContentControl Grid.Column="1" x:Name="ContentArea"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
 
         <!-- Toast 浮层（跨整个窗口，z 序最高）。
              Grid 无 Background（默认 null）→ 空白区域不参与命中测试，点击照常穿透到下层 UI；

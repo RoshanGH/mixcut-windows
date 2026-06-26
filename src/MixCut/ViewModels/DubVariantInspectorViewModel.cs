@@ -70,6 +70,10 @@ public sealed partial class DubVariantInspectorViewModel : ObservableObject
         State = DubInspectorState.Hidden;
     }
 
+    /// <summary>关闭检视器（✕ 按钮）。</summary>
+    [RelayCommand]
+    private void Close() => Clear();
+
     /// <summary>单击分镜后加载其变体池。</summary>
     public async Task LoadAsync(Segment segment)
     {
