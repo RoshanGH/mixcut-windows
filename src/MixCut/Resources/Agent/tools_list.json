@@ -1,0 +1,724 @@
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "tools": [
+            {
+                "name": "list_projects",
+                "description": "列出所有项目及其状态、视频数、分镜数、方案数",
+                "annotations": {
+                    "readOnlyHint": true
+                },
+                "inputSchema": {
+                    "required": [],
+                    "properties": {},
+                    "type": "object"
+                }
+            },
+            {
+                "inputSchema": {
+                    "required": [
+                        "project_id"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID"
+                        }
+                    }
+                },
+                "description": "获取项目详情，含每个视频的处理状态、时长、失败原因、分镜数",
+                "name": "get_project",
+                "annotations": {
+                    "readOnlyHint": true
+                }
+            },
+            {
+                "annotations": {
+                    "readOnlyHint": true
+                },
+                "inputSchema": {
+                    "required": [],
+                    "type": "object",
+                    "properties": {
+                        "video_id": {
+                            "type": "string",
+                            "description": "视频 UUID（与 project_id 二选一）"
+                        },
+                        "position_type": {
+                            "type": "string",
+                            "description": "可选，按位置过滤：开头/中间/结尾"
+                        },
+                        "semantic_type": {
+                            "type": "string",
+                            "description": "可选，按语义类型过滤，如 痛点/行动号召"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_id 二选一）"
+                        }
+                    }
+                },
+                "description": "列出分镜（台词、帧范围、语义类型、位置、质量分）。project_id 与 video_id 二选一，同时提供报错",
+                "name": "list_segments"
+            },
+            {
+                "name": "list_schemes",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID"
+                        }
+                    },
+                    "required": [
+                        "project_id"
+                    ]
+                },
+                "annotations": {
+                    "readOnlyHint": true
+                },
+                "description": "列出项目的混剪方案（名称、风格、所属策略、预计时长、分镜序列），供选择导出"
+            },
+            {
+                "description": "查询异步任务状态与该项目所有视频的实时流水线进度",
+                "name": "get_job",
+                "annotations": {
+                    "readOnlyHint": true
+                },
+                "inputSchema": {
+                    "properties": {
+                        "job_id": {
+                            "type": "string",
+                            "description": "任务 UUID"
+                        }
+                    },
+                    "required": [
+                        "job_id"
+                    ],
+                    "type": "object"
+                }
+            },
+            {
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false
+                },
+                "description": "新建项目",
+                "inputSchema": {
+                    "required": [
+                        "name"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "项目名称"
+                        }
+                    }
+                },
+                "name": "create_project"
+            },
+            {
+                "name": "import_videos",
+                "inputSchema": {
+                    "type": "object",
+                    "required": [
+                        "project_id",
+                        "paths"
+                    ],
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID"
+                        },
+                        "paths": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "视频文件绝对路径数组"
+                        }
+                    }
+                },
+                "description": "把本地视频文件导入项目并启动完整分析流水线（场景检测→ASR→AI 语义分析→边界优化）。立即返回 job_id，用 get_job 轮询进度",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false
+                }
+            },
+            {
+                "name": "retry_analysis",
+                "inputSchema": {
+                    "type": "object",
+                    "required": [
+                        "video_id"
+                    ],
+                    "properties": {
+                        "video_id": {
+                            "type": "string",
+                            "description": "视频 UUID"
+                        }
+                    }
+                },
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false
+                },
+                "description": "对失败的视频重试 AI 语义分析。返回 job_id"
+            },
+            {
+                "name": "retry_asr",
+                "inputSchema": {
+                    "required": [
+                        "video_id"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "video_id": {
+                            "type": "string",
+                            "description": "视频 UUID"
+                        }
+                    }
+                },
+                "description": "对识别异常的视频重跑语音识别（会连带重做 AI 分析并重建分镜）。返回 job_id",
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                }
+            },
+            {
+                "name": "remove_video",
+                "description": "从项目移除视频（立即生效，无撤销）。若视频不被其它项目引用则连分镜记录一起删除",
+                "inputSchema": {
+                    "type": "object",
+                    "required": [
+                        "project_id",
+                        "video_id"
+                    ],
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID"
+                        },
+                        "video_id": {
+                            "type": "string",
+                            "description": "视频 UUID"
+                        }
+                    }
+                },
+                "annotations": {
+                    "destructiveHint": true,
+                    "readOnlyHint": false
+                }
+            },
+            {
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID"
+                        },
+                        "target_count": {
+                            "type": "integer",
+                            "description": "目标方案数量，默认 50，上限 100"
+                        },
+                        "custom_prompt": {
+                            "type": "string",
+                            "description": "可选的自定义生成要求"
+                        }
+                    },
+                    "required": [
+                        "project_id"
+                    ]
+                },
+                "description": "AI 生成混剪方案（策略生成→批量分镜组合，与 UI 流程一致）。需要已配置 AI API Key。返回 job_id，用 get_job 轮询",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false
+                },
+                "name": "generate_schemes"
+            },
+            {
+                "name": "export_scheme",
+                "description": "把方案导出为成片 mp4（原声导出，默认 H.264 硬件加速，命名规则与 UI 批量导出一致）。返回 job_id，用 get_job 轮询",
+                "inputSchema": {
+                    "required": [
+                        "scheme_ids",
+                        "output_dir"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "output_dir": {
+                            "type": "string",
+                            "description": "输出目录绝对路径，必须已存在且可写"
+                        },
+                        "scheme_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "要导出的方案 UUID 数组，串行导出"
+                        }
+                    }
+                },
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                }
+            },
+            {
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": true
+                },
+                "name": "delete_project",
+                "description": "删除整个项目（无撤销）。需二次确认：不带 confirm 时只返回影响预览（将删除的视频/方案数），带 confirm=true 才真正执行。方案/策略级联删除；视频仅在不被其它项目引用时才连分镜一起删除",
+                "inputSchema": {
+                    "required": [
+                        "project_id"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID"
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "description": "必须显式传 true 才执行删除；省略或 false 时仅返回影响预览"
+                        }
+                    }
+                }
+            },
+            {
+                "description": "批量修改分镜标签。add/remove/set_semantic_types 三选一（11 种：噱头引入/痛点/产品方案/效果展示/信任背书/价格对比/活动福利/行动号召/产品定位/产品使用教育/过渡），可同时设 position_type（开头/中间/结尾）。每个分镜至少保留 1 个语义类型",
+                "name": "update_segment_tags",
+                "inputSchema": {
+                    "type": "object",
+                    "required": [],
+                    "properties": {
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "set_semantic_types": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "直接替换为这组语义类型"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起，如 [3,4,5]"
+                        },
+                        "remove_semantic_types": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "要移除的语义类型"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        },
+                        "position_type": {
+                            "type": "string",
+                            "description": "位置：开头/中间/结尾"
+                        },
+                        "add_semantic_types": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "要添加的语义类型"
+                        }
+                    }
+                },
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false
+                }
+            },
+            {
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false
+                },
+                "inputSchema": {
+                    "type": "object",
+                    "required": [],
+                    "properties": {
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "end_delta_frames": {
+                            "type": "integer",
+                            "description": "终点偏移帧数，可负（往后延伸用正数）"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起"
+                        },
+                        "start_frame": {
+                            "type": "integer",
+                            "description": "起点绝对帧（仅单分镜）"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        },
+                        "start_delta_frames": {
+                            "type": "integer",
+                            "description": "起点偏移帧数，可负"
+                        },
+                        "end_frame": {
+                            "type": "integer",
+                            "description": "终点绝对帧（仅单分镜）"
+                        }
+                    }
+                },
+                "description": "按帧批量调整分镜边界（start_delta_frames/end_delta_frames 可负；绝对值 start_frame/end_frame 仅单分镜可用）。自动重配台词与缩略图。⚠️ 已生成配音的分镜会返回 stale_dubs 提醒（配音按旧时长合成，导出会静默用旧音频），是否重新生成由用户决定",
+                "name": "adjust_segment_boundary"
+            },
+            {
+                "description": "设置字幕处理模式，只认三档：直接烧录（新字幕直接叠加）/模糊虚化（原字幕区域模糊后烧新字幕）/纯色遮挡（色块盖住原字幕再烧新字幕）。用户用词含糊时必须报出三档名称请其确认。可同时设字号 font_ratio（0.030-0.085）与遮挡区域 mask_y/mask_height（0-1）。保留原声的分镜自动跳过",
+                "inputSchema": {
+                    "required": [
+                        "mode"
+                    ],
+                    "type": "object",
+                    "properties": {
+                        "mask_y": {
+                            "type": "number",
+                            "description": "遮挡区域顶部位置 0-1（原点左上）"
+                        },
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "mask_height": {
+                            "type": "number",
+                            "description": "遮挡区域高度 0-1"
+                        },
+                        "mode": {
+                            "type": "string",
+                            "description": "字幕三档之一，必须明确",
+                            "enum": [
+                                "直接烧录",
+                                "模糊虚化",
+                                "纯色遮挡"
+                            ]
+                        },
+                        "font_ratio": {
+                            "type": "number",
+                            "description": "字号比例 0.030-0.085，超界自动钳制"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        }
+                    }
+                },
+                "name": "set_subtitle_mode",
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                }
+            },
+            {
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "original_in_combination": {
+                            "type": "boolean",
+                            "description": "可选：原声是否参与导出组合"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "keep_original": {
+                            "type": "boolean",
+                            "description": "true=保留原声"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        }
+                    },
+                    "required": [
+                        "keep_original"
+                    ]
+                },
+                "name": "set_voice_keep_original",
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                },
+                "description": "设置保留原声开关：开=不改写不配音、导出不加字幕。可选设置原声是否参与导出组合"
+            },
+            {
+                "name": "set_dub_participation",
+                "description": "设置指定声音变体是否参与导出组合（对应 UI 变体面板勾选）",
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                },
+                "inputSchema": {
+                    "required": [
+                        "variant_indexes",
+                        "participates"
+                    ],
+                    "properties": {
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "participates": {
+                            "type": "boolean",
+                            "description": "是否参与导出组合"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "variant_indexes": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "变体序号数组（list_segments 的 voice_variant_count 内）"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            {
+                "inputSchema": {
+                    "properties": {
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        }
+                    },
+                    "type": "object",
+                    "required": []
+                },
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                },
+                "name": "generate_voice_variants",
+                "description": "为分镜生成声音变体：自动克隆原声→AI 改写 K 套→合成配音→字幕对齐（与 UI 一键改写同流程）。需要千问 API Key。返回 job_id 轮询"
+            },
+            {
+                "description": "批量删除分镜（立即生效，无撤销）。级联删除其配音变体与方案槽位记录，结果列出受影响的方案",
+                "name": "delete_segments",
+                "inputSchema": {
+                    "required": [],
+                    "type": "object",
+                    "properties": {
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        }
+                    }
+                },
+                "annotations": {
+                    "destructiveHint": true,
+                    "readOnlyHint": false
+                }
+            },
+            {
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                },
+                "inputSchema": {
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID"
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "方案名称，缺省自动编号"
+                        },
+                        "segments": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "segment_no": {
+                                        "type": "integer"
+                                    },
+                                    "video_no": {
+                                        "type": "integer"
+                                    },
+                                    "segment_id": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "description": "有序分镜列表，跨视频任意混排"
+                        }
+                    },
+                    "required": [
+                        "project_id",
+                        "segments"
+                    ],
+                    "type": "object"
+                },
+                "description": "跨视频自选分镜按顺序组成方案（进「自定义组合」分组），之后可用 export_scheme 导出。segments 为有序数组，每项 {video_no, segment_no} 或 {segment_id}",
+                "name": "create_custom_scheme"
+            },
+            {
+                "annotations": {
+                    "destructiveHint": false,
+                    "readOnlyHint": false
+                },
+                "inputSchema": {
+                    "properties": {
+                        "segment_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "分镜 UUID 数组（与编号方式二选一）"
+                        },
+                        "output_dir": {
+                            "type": "string",
+                            "description": "输出目录绝对路径，必须已存在且可写"
+                        },
+                        "segment_nos": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            },
+                            "description": "分镜编号数组：视频内按时间顺序 1 起"
+                        },
+                        "video_no": {
+                            "type": "integer",
+                            "description": "视频编号：项目内按导入顺序 1 起"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "项目 UUID（与 video_no/segment_nos 配合使用）"
+                        }
+                    },
+                    "type": "object",
+                    "required": [
+                        "output_dir"
+                    ]
+                },
+                "description": "批量导出分镜片段为独立 mp4 到指定目录（命名规则与 UI 批量导出一致）。返回 job_id 轮询",
+                "name": "export_segments"
+            }
+        ]
+    }
+}

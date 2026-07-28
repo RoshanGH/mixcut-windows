@@ -5,12 +5,12 @@ using MixCut.Utilities;
 namespace MixCut.Views;
 
 /// <summary>
-/// 首次启动 4 步使用引导。对应 macOS 版 OnboardingView。
+/// 首次启动 5 步使用引导（末页为 Agent 接入介绍，issue #23）。对应 macOS 版 OnboardingView。
 /// 通过 <see cref="AppSettings.HasCompletedOnboarding"/> 持久化是否已完成。
 /// </summary>
 public partial class OnboardingWindow : Window
 {
-    private const int TotalSteps = 4;
+    private const int TotalSteps = 5;
 
     private readonly AppSettings _settings;
     private readonly IServiceProvider _services;
@@ -31,9 +31,10 @@ public partial class OnboardingWindow : Window
         ApiKeyPage.Visibility = _step == 1 ? Visibility.Visible : Visibility.Collapsed;
         ImportPage.Visibility = _step == 2 ? Visibility.Visible : Visibility.Collapsed;
         GeneratePage.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
+        AgentPage.Visibility = _step == 4 ? Visibility.Visible : Visibility.Collapsed;
 
         // 圆点
-        var dots = new[] { Dot0, Dot1, Dot2, Dot3 };
+        var dots = new[] { Dot0, Dot1, Dot2, Dot3, Dot4 };
         for (var i = 0; i < dots.Length; i++)
         {
             dots[i].Fill = i == _step

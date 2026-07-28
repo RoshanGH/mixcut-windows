@@ -69,6 +69,10 @@ public partial class MainWindow : Window
         // v0.5.0 配音：变体增删/生成后失效 SegmentLibrary/Schemes/Export/Overview 缓存（对齐 OnSegmentsChanged）。
         _dubbingVm.DubsChanged += OnDubsChanged;
 
+        // issue #23 Agent 接入：Agent 绕过 UI 流程写库后广播全量重载（复用「数据变更 → 清缓存 +
+        // 重拉项目列表 + 刷当前视图」机制），保证侧边栏/列表立即反映 Agent 的改动。
+        Services.Agent.AgentGateway.UiReloadRequested += OnAgentDataChanged;
+
         if (_settings.LastSelectedProjectId is { } lastId)
         {
             var match = _vm.ProjectVM.Projects.FirstOrDefault(p => p.Id == lastId);
@@ -307,6 +311,13 @@ public partial class MainWindow : Window
         });
     }
 
+    /// <summary>Agent（MCP）写库后的全量重载：清视图缓存 + 重拉项目列表 + 刷新当前视图。</summary>
+    private void OnAgentDataChanged()
+    {
+        // BeginInvoke：广播可能发生在工具 handler 的写路径内，异步排队避免重入正在进行的操作。
+        Dispatcher.BeginInvoke(RefreshAfterProjectChange);
+    }
+
     private void RefreshAfterProjectChange()
     {
         // 数据变化（导入视频/删除分镜/生成方案 等）：清空缓存让所有视图下次切回时强制 reload
@@ -360,7 +371,9 @@ public partial class MainWindow : Window
     /// </summary>
     public void OpenSettings()
     {
-        new SettingsWindow(_settings, _asrService) { Owner = this }.ShowDialog();
+        new SettingsWindow(_settings, _asrService,
+            (Services.Agent.AgentGateway)_services.GetService(typeof(Services.Agent.AgentGateway))!)
+        { Owner = this }.ShowDialog();
     }
 
     /// <summary>侧边栏「微信」入口：弹出微信号卡片（issue #5）。</summary>

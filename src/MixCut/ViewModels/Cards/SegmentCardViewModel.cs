@@ -310,6 +310,9 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
         set { _segment.MaskRect = value; }
     }
 
+    /// <summary>逐分镜字号比例（issue #23 Agent 设置）；≤0 = 跟随全局，字号预览层据此渲染。</summary>
+    public double SegmentFontRatio => _segment.SubtitleFontRatio;
+
     // ============ 命令 ============
 
     [RelayCommand]

@@ -69,6 +69,20 @@ public partial class ProjectViewModel : ObservableObject
             return;
         }
 
+        var project = CreateProjectCore(name);
+
+        NewProjectName = string.Empty;
+        IsCreatingProject = false;
+        FetchProjects();
+        SelectedProject = Projects.FirstOrDefault(p => p.Id == project.Id);
+    }
+
+    /// <summary>
+    /// 建项目的核心 DB 逻辑（UI 与 Agent 共用同一路径，issue #23）。
+    /// 不动列表/选中状态——UI 调用方自己 FetchProjects，Agent 走全量重载广播。
+    /// </summary>
+    public Project CreateProjectCore(string name)
+    {
         var project = new Project { Name = name };
         using (var db = _dbFactory.CreateDbContext())
         {
@@ -91,12 +105,8 @@ public partial class ProjectViewModel : ObservableObject
 
             db.SaveChanges();
         }
-
-        NewProjectName = string.Empty;
-        IsCreatingProject = false;
-        FetchProjects();
-        SelectedProject = Projects.FirstOrDefault(p => p.Id == project.Id);
         _logger.LogInformation("创建项目: {Name}", name);
+        return project;
     }
 
     /// <summary>
@@ -109,15 +119,24 @@ public partial class ProjectViewModel : ObservableObject
         {
             SelectedProject = null;
         }
+        DeleteProjectCore(project.Id);
+        FetchProjects();
+    }
 
+    /// <summary>
+    /// 删项目的核心 DB 逻辑（UI 与 Agent 共用同一路径，issue #23）。
+    /// 返回因无引用而被全局删除的视频名清单（Agent 的 delete_project 结果需要）。
+    /// </summary>
+    public IReadOnlyList<string> DeleteProjectCore(Guid projectId)
+    {
         using var db = _dbFactory.CreateDbContext();
         var tracked = db.Projects
             .Include(p => p.ProjectVideos).ThenInclude(pv => pv.Video!).ThenInclude(v => v.Segments)
             .AsSplitQuery() // P0-8：嵌套集合拆分查询，避免笛卡尔放大
-            .FirstOrDefault(p => p.Id == project.Id);
+            .FirstOrDefault(p => p.Id == projectId);
         if (tracked is null)
         {
-            return;
+            return Array.Empty<string>();
         }
 
         // 收集该项目引用的视频（删除关联前）。
@@ -140,6 +159,7 @@ public partial class ProjectViewModel : ObservableObject
             .ToHashSet();
 
         var orphans = referencedVideos.Where(v => !stillReferencedIds.Contains(v.Id)).ToList();
+        var deletedNames = orphans.Select(v => v.Name).ToList();
         if (orphans.Count > 0)
         {
             var orphanIds = orphans.Select(v => v.Id).ToList();
@@ -161,7 +181,7 @@ public partial class ProjectViewModel : ObservableObject
             }
         }
 
-        FetchProjects();
+        return deletedNames;
     }
 
     // issue #16（对齐 macOS v0.8.1）：已移除「归档」——归档后项目从列表消失且无从恢复，

@@ -1,0 +1,3 @@
+# issue #23 Agent 权威附件：内容逐字下发（与 macOS 对拍），必须保持 LF 原样，禁止 CRLF 转换
+src/MixCut/Resources/Agent/** -text
+docs/agent-parity/** -text

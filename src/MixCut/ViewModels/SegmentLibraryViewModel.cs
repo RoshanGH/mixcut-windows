@@ -319,8 +319,35 @@ public partial class SegmentLibraryViewModel : ObservableObject, IDisposable
         _segments.Clear();
         _segments.AddRange(segs);
         RecomputeNumberByVideo();
+        RecomputeVideoNumbers(projectId);
         ApplyFilter();
     }
+
+    /// <summary>视频编号（issue #23）：视频 Id → 项目内按导入时间（ProjectVideo.AddedAt）升序的 1-based 号。
+    /// 与素材导入页徽章、Agent 的 video_no 同一套规则；覆盖全部视频（含自建分镜载体）。</summary>
+    private Dictionary<Guid, int> _videoNoById = new();
+
+    private void RecomputeVideoNumbers(Guid projectId)
+    {
+        try
+        {
+            if (_context is null) { _videoNoById = new(); return; }
+            var ids = _context.ProjectVideos
+                .Where(pv => pv.ProjectId == projectId && pv.VideoId != null)
+                .OrderBy(pv => pv.AddedAt)
+                .Select(pv => pv.VideoId!.Value)
+                .ToList();
+            _videoNoById = ids.Select((id, idx) => (id, idx)).ToDictionary(x => x.id, x => x.idx + 1);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SegLib] 计算视频编号失败");
+            _videoNoById = new();
+        }
+    }
+
+    /// <summary>某视频在当前项目内的编号；未知返回 0（组头徽章隐藏）。</summary>
+    public int VideoNoFor(Guid videoId) => _videoNoById.GetValueOrDefault(videoId);
 
     /// <summary>
     /// 计算每个视频内分镜的 1-based 编号（按 StartTime 升序）。

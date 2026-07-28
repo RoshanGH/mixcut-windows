@@ -305,10 +305,21 @@
                                                    Stretch="UniformToFill" />
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding DisplayName}"
-                                                       FontSize="13" FontWeight="SemiBold"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"
-                                                       TextTrimming="CharacterEllipsis" MaxWidth="700" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <!-- 视频编号徽章（issue #23）：与导入页徽章 / Agent video_no 同一套编号；
+                                                     「自建分镜」聚合组不编号（ShowVideoNo=false）。 -->
+                                                <Border Padding="7,1.5" CornerRadius="999" Margin="0,0,6,0"
+                                                        Background="#9E000000" VerticalAlignment="Center"
+                                                        Visibility="{Binding ShowVideoNo, Converter={StaticResource BoolToVisibility}}">
+                                                    <TextBlock Text="{Binding VideoNoText}" Foreground="White"
+                                                               FontSize="11" FontWeight="Bold" />
+                                                </Border>
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           FontSize="13" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis" MaxWidth="700"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
                                             <TextBlock Text="{Binding MetaText}"
                                                        FontSize="11"
                                                        Foreground="{StaticResource TextTertiaryBrush}"
@@ -585,6 +596,7 @@
                                         <sl:SubtitleMaskOverlay Rect="{Binding MaskRect, Mode=TwoWay}"
                                                                 CommitCommand="{Binding CommitMaskCommand}"
                                                                 ShowMaskBox="{Binding NeedsMaskEditor}"
+                                                                SegmentFontRatio="{Binding SegmentFontRatio, Mode=OneWay}"
                                                                 Visibility="{Binding SubtitlePreviewVisible, Converter={StaticResource BoolToVisibility}}" />
 
                                         <!-- #12：切换画面胶囊（左下，仅有 AI 替换画面时显示）。点击在原画面 ↔ 替换画面来回切；

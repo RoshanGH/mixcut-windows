@@ -72,6 +72,20 @@ public partial class SubtitleMaskOverlay : UserControl
         set => SetValue(ShowMaskBoxProperty, value);
     }
 
+    /// <summary>
+    /// 逐分镜字号比例（issue #23：Agent set_subtitle_mode 可给单个分镜设字号）。
+    /// ≤0 = 未单独设置，字号预览跟随全局 SubtitleFontState（存量行为不变）。
+    /// </summary>
+    public static readonly DependencyProperty SegmentFontRatioProperty = DependencyProperty.Register(
+        nameof(SegmentFontRatio), typeof(double), typeof(SubtitleMaskOverlay),
+        new FrameworkPropertyMetadata(-1.0, OnRectChanged));
+
+    public double SegmentFontRatio
+    {
+        get => (double)GetValue(SegmentFontRatioProperty);
+        set => SetValue(SegmentFontRatioProperty, value);
+    }
+
     private static void OnRectChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((SubtitleMaskOverlay)d).UpdateVisual();
 
@@ -102,8 +116,10 @@ public partial class SubtitleMaskOverlay : UserControl
             Canvas.SetTop(Handle, py + ph - Handle.Height / 2);
         }
 
-        // 字号预览：示例字幕字号 = 显示宽 × 全局比例（与导出按成片宽换算同源），居中于遮挡带。
-        var ratio = MixCut.Models.SubtitleFontSize.Clamp(ViewModels.SubtitleFontState.Shared.Ratio);
+        // 字号预览：示例字幕字号 = 显示宽 × 比例（与导出按成片宽换算同源），居中于遮挡带。
+        // 逐分镜设置过（Agent font_ratio）用自己的比例，否则跟随全局（issue #23）。
+        var ratio = MixCut.Models.SubtitleFontSize.Clamp(
+            SegmentFontRatio > 0 ? SegmentFontRatio : ViewModels.SubtitleFontState.Shared.Ratio);
         PreviewText.FontSize = Math.Max(6.0, w * ratio);
         // 先量胶囊期望尺寸再居中落位（Canvas 内绝对定位）
         PreviewPill.Measure(new Size(w, h));

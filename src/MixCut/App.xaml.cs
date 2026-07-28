@@ -106,6 +106,9 @@ public partial class App : Application
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<UpdateBannerViewModel>();
 
+        // issue #23 Agent 接入：内嵌本地 MCP server（仅 127.0.0.1，设置页可开关/改端口）。
+        services.AddSingleton<Services.Agent.AgentGateway>();
+
         // 视图。
         services.AddSingleton<MainWindow>();
         services.AddTransient<SettingsWindow>();
@@ -1027,6 +1030,8 @@ public partial class App : Application
             // 还不存在，若在建表前 AddColumnIfMissing 会撞 "no such table" 静默失败 → 该表建出来后仍缺列 →
             // 之后任何 eager-load SegmentDubs 的查询（LoadSchemes）报 "no such column"，表现为「生成方案失败」。
             // 通用铁律：任何 AddColumnIfMissing(表X,*) 都必须排在 CreateTableIfMissing(表X) 之后。
+            // issue #23 Agent 接入：逐分镜字幕字号比例（-1 = 未单独设置，跟随全局值，存量行为不变）
+            AddColumnIfMissing(db, "Segments", "SubtitleFontRatio", "REAL NOT NULL DEFAULT -1");
             // #12 分镜头 AI 画面替换：Segment 四个「替换画面」列 + PhysicalShots / ShotVariants 两张新表
             AddColumnIfMissing(db, "Segments", "ReplacedPictureVideoPath", "TEXT");
             AddColumnIfMissing(db, "Segments", "ReplacedPictureThumbnailPath", "TEXT");
@@ -1266,6 +1271,10 @@ public partial class App : Application
 
         // 全局字幕字号比例：从设置读初值 + 绑定落盘回调（滑条 / 预览 / 导出烧录共用一份）。
         ViewModels.SubtitleFontState.Shared.Attach(settings);
+
+        // issue #23 Agent 接入：主窗口就绪后装配并启动内嵌 MCP server（按设置开关/端口；
+        // 端口被占用只 Toast 提示不崩溃）。
+        _host.Services.GetRequiredService<Services.Agent.AgentGateway>().Configure();
 
         if (!settings.HasCompletedOnboarding)
         {
@@ -1839,6 +1848,15 @@ public partial class App : Application
     protected override async void OnExit(ExitEventArgs e)
     {
         Log.Information("MixCut 退出");
+        // issue #23：先停内嵌 MCP server 的监听（listener 不随 host 生命周期管理）。
+        try
+        {
+            _host.Services.GetRequiredService<Services.Agent.AgentGateway>().Stop();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[MCP] 停止 Agent 服务失败，忽略");
+        }
         using (_host)
         {
             await _host.StopAsync();

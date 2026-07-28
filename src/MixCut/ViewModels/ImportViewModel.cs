@@ -57,6 +57,20 @@ public sealed record VideoProgressState(
         new(VideoStage.Queued, 0, 0, "等待中");
 }
 
+/// <summary>
+/// 一次导入的结构化报告（issue #23 Agent 用，对应 macOS ImportReport）。
+/// UI 调用方可忽略返回值，行为不变；Agent 的 import_videos job 把它整包返回给客户端。
+/// </summary>
+public sealed class ImportReport
+{
+    public List<string> ImportedNames { get; } = new();
+    public List<string> LinkedExistingNames { get; } = new();
+    public List<string> SkippedDuplicateNames { get; } = new();
+    public List<(string Name, string Reason)> Failed { get; } = new();
+    /// <summary>整体中止原因（全部重复 / 磁盘不足），null 表示正常走完。</summary>
+    public string? AbortMessage { get; set; }
+}
+
 /// <summary>视频导入及分析 ViewModel。对应 macOS 版 ImportViewModel。</summary>
 public partial class ImportViewModel : ObservableObject
 {
@@ -115,14 +129,39 @@ public partial class ImportViewModel : ObservableObject
                 // #17：导入页只列成片视频，排除自建分镜载体（它们只在分镜库以分镜形态出现）。
                 .Where(pv => pv.Video != null && !pv.Video.IsUserUploaded)
                 .Include(pv => pv.Video!).ThenInclude(v => v.Segments)
+                // issue #23：按项目内导入时间（AddedAt）排——与视频编号徽章 / Agent video_no 同一顺序
+                //（共享视频的 Video.CreatedAt 是它最早那次导入的时间，会错序）。
+                .OrderBy(pv => pv.AddedAt)
                 .Select(pv => pv.Video!)
-                .OrderBy(v => v.CreatedAt)
                 .ToList();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[ImportVM] GetProjectVideos 失败");
             return Array.Empty<Video>();
+        }
+    }
+
+    /// <summary>
+    /// 项目内视频编号（issue #23）：按导入时间（ProjectVideo.AddedAt）升序 1 起，动态计算、删除自动前补。
+    /// 编号覆盖<b>全部</b>视频（含自建分镜载体，即使导入页不显示它们），与 Agent 的 video_no 同一套规则。
+    /// </summary>
+    public IReadOnlyDictionary<Guid, int> GetVideoNumbers(Guid projectId)
+    {
+        try
+        {
+            using var db = _dbFactory.CreateDbContext();
+            var ids = db.ProjectVideos
+                .Where(pv => pv.ProjectId == projectId && pv.VideoId != null)
+                .OrderBy(pv => pv.AddedAt)
+                .Select(pv => pv.VideoId!.Value)
+                .ToList();
+            return ids.Select((id, idx) => (id, idx)).ToDictionary(x => x.id, x => x.idx + 1);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[ImportVM] GetVideoNumbers 失败");
+            return new Dictionary<Guid, int>();
         }
     }
 
@@ -344,9 +383,10 @@ public partial class ImportViewModel : ObservableObject
         _logger = logger;
     }
 
-    /// <summary>导入视频文件列表（全局去重 + 共享引用）。</summary>
-    public async Task ImportVideosAsync(IReadOnlyList<string> paths, Guid projectId)
+    /// <summary>导入视频文件列表（全局去重 + 共享引用）。返回结构化报告（UI 可忽略，Agent 用）。</summary>
+    public async Task<ImportReport> ImportVideosAsync(IReadOnlyList<string> paths, Guid projectId)
     {
+        var report = new ImportReport();
         IsProcessing = true;
         ErrorMessage = null;
 
@@ -381,37 +421,51 @@ public partial class ImportViewModel : ObservableObject
             }
         }
 
+        report.SkippedDuplicateNames.AddRange(skipped);
         if (skipped.Count > 0)
         {
             var list = string.Join("、", skipped);
             if (deduped.Count == 0)
             {
                 ErrorMessage = $"所有视频均已导入过：{list}";
+                report.AbortMessage = ErrorMessage;
                 IsProcessing = false;
                 Phase = ImportPhase.Completed;
                 Progress = 1.0;
-                return;
+                return report;
             }
             ErrorMessage = $"已跳过重复视频：{list}";
         }
 
         if (!CheckDiskSpace(deduped))
         {
+            report.AbortMessage = ErrorMessage ?? "磁盘空间不足";
             IsProcessing = false;
-            return;
+            return report;
         }
 
         SetProjectStatus(projectId, ProjectStatus.Importing);
 
         // 阶段 1：快速创建/关联视频实体。
         var videosToAnalyze = new List<Guid>();
+        var videoNames = new Dictionary<Guid, string>();   // Agent 报告用：分析失败时按名字归档
         for (var index = 0; index < deduped.Count; index++)
         {
             ProgressDescription = $"导入第 {index + 1}/{deduped.Count} 个视频...";
             Progress = (double)index / deduped.Count * 0.2;
+            var fileName = Path.GetFileName(deduped[index]);
             try
             {
-                var (videoId, needsAnalysis) = await ImportOrLinkVideoAsync(deduped[index], projectId);
+                var (videoId, needsAnalysis, linkedExisting) = await ImportOrLinkVideoAsync(deduped[index], projectId);
+                videoNames[videoId] = fileName;
+                if (linkedExisting && !needsAnalysis)
+                {
+                    report.LinkedExistingNames.Add(fileName);
+                }
+                else
+                {
+                    report.ImportedNames.Add(fileName);
+                }
                 if (needsAnalysis)
                 {
                     videosToAnalyze.Add(videoId);
@@ -421,7 +475,9 @@ public partial class ImportViewModel : ObservableObject
             }
             catch (Exception ex)
             {
-                AppendError($"导入 {Path.GetFileName(deduped[index])} 失败：{ExceptionTranslator.ToUserMessage(ex)}");
+                var reason = ExceptionTranslator.ToUserMessage(ex);
+                report.Failed.Add((fileName, reason));
+                AppendError($"导入 {fileName} 失败：{reason}");
             }
         }
 
@@ -450,6 +506,11 @@ public partial class ImportViewModel : ObservableObject
                 }
                 catch (Exception ex)
                 {
+                    lock (report)
+                    {
+                        report.Failed.Add((videoNames.GetValueOrDefault(videoId, videoId.ToString()),
+                            ExceptionTranslator.ToUserMessage(ex)));
+                    }
                     await HandleAnalyzeFailureAsync(videoId, ex);
                 }
                 finally
@@ -490,12 +551,13 @@ public partial class ImportViewModel : ObservableObject
         Phase = ImportPhase.Completed;
         Progress = 1.0;
         IsProcessing = false;
+        return report;
     }
 
     // ---- 核心导入逻辑 ----
 
-    /// <summary>导入或关联视频。返回 (videoId, needsAnalysis)。</summary>
-    private async Task<(Guid VideoId, bool NeedsAnalysis)> ImportOrLinkVideoAsync(string path, Guid projectId)
+    /// <summary>导入或关联视频。返回 (videoId, needsAnalysis, linkedExisting)。</summary>
+    private async Task<(Guid VideoId, bool NeedsAnalysis, bool LinkedExisting)> ImportOrLinkVideoAsync(string path, Guid projectId)
     {
         Phase = ImportPhase.Copying;
         // hash 计算放线程池，避免在 UI 线程同步读 8MB 阻塞界面（§5）。
@@ -515,7 +577,7 @@ public partial class ImportViewModel : ObservableObject
                 await db.SaveChangesAsync();
                 _logger.LogInformation("全局已有视频「{Name}」，直接关联到项目", existing.Name);
                 var needsAnalysis = existing.Status != VideoStatus.Completed || existing.Segments.Count == 0;
-                return (existing.Id, needsAnalysis);
+                return (existing.Id, needsAnalysis, true);
             }
         }
 
@@ -556,7 +618,7 @@ public partial class ImportViewModel : ObservableObject
         }
 
         await db.SaveChangesAsync();
-        return (video.Id, true);
+        return (video.Id, true, false);
     }
 
     /// <summary>执行视频分析（场景检测 + ASR + AI 分析 + 边界优化）。每个视频独立 DbContext。</summary>

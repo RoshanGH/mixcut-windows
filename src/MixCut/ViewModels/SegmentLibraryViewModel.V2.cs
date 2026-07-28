@@ -119,9 +119,16 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
     }
 
     private VideoGroupViewModel MakeGroup(GroupSpec spec, List<SegmentCardViewModel> cards)
-        => spec.IsUserGroup
-            ? VideoGroupViewModel.CreateUserSegmentGroup(spec.Video, cards)
-            : new VideoGroupViewModel(spec.Video, cards, _dubbing);
+    {
+        if (spec.IsUserGroup)
+        {
+            // 「自建分镜」聚合组由多个载体视频合并而成，不显示编号（issue #23）。
+            return VideoGroupViewModel.CreateUserSegmentGroup(spec.Video, cards);
+        }
+        var group = new VideoGroupViewModel(spec.Video, cards, _dubbing);
+        group.VideoNo = VideoNoFor(spec.Video.Id);
+        return group;
+    }
 
     /// <summary>切项目 / 筛选 / 排序变化时调用，重建 Groups。</summary>
     public void RebuildGroups()

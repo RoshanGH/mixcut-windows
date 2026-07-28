@@ -349,6 +349,16 @@
                                             </ItemsControl>
                                         </ScrollViewer>
                                     </DockPanel>
+
+                                    <!-- 视频编号徽章（issue #23）：与 Agent 指令里的 video_no 同一套编号
+                                         （「1 号视频」即此号）。左上角覆盖层，不拦截鼠标事件。 -->
+                                    <Border Grid.Column="0" Grid.ColumnSpan="4"
+                                            HorizontalAlignment="Left" VerticalAlignment="Top"
+                                            Margin="6" Padding="8,3" CornerRadius="999"
+                                            Background="#9E000000" IsHitTestVisible="False">
+                                        <TextBlock Text="{Binding VideoNoText}" Foreground="White"
+                                                   FontSize="11" FontWeight="Bold" />
+                                    </Border>
                                 </Grid>
                             </Border>
                         </DataTemplate>

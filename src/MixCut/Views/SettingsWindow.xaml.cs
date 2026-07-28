@@ -22,14 +22,17 @@ public partial class SettingsWindow : Window
 
     private readonly AppSettings _settings;
     private readonly ASRService _asrService;
+    private readonly Services.Agent.AgentGateway _agentGateway;
     private bool _loaded;
     private bool _apiKeyHidden = true;
     private string? _actualKey;
+    private bool _agentLoaded;
 
-    public SettingsWindow(AppSettings settings, ASRService asrService)
+    public SettingsWindow(AppSettings settings, ASRService asrService, Services.Agent.AgentGateway agentGateway)
     {
         _settings = settings;
         _asrService = asrService;
+        _agentGateway = agentGateway;
         InitializeComponent();
 
         foreach (var provider in Enum.GetValues<AIProviderType>())
@@ -45,6 +48,7 @@ public partial class SettingsWindow : Window
         ProviderCombo.SelectedIndex = (int)_settings.ActiveProvider;
 
         BuildGeneralTab();
+        BuildAgentTab();
     }
 
     private AIProviderType CurrentProvider =>
@@ -792,5 +796,169 @@ public partial class SettingsWindow : Window
         var i = 0;
         while (b >= 1024 && i < u.Length - 1) { b /= 1024; i++; }
         return $"{b:0.#} {u[i]}";
+    }
+
+    // ---- Agent tab（issue #23 内嵌 MCP server）----
+
+    /// <summary>
+    /// 各 Agent 客户端的注册片段（对齐 macOS AgentClientSnippet）。MCP 没有一条通用注册命令，
+    /// 但核心信息只有服务地址一个；JSON（mcpServers 格式）是事实标准。
+    /// </summary>
+    private sealed record AgentClientSnippet(string Name, Func<string, string> Snippet, string Hint);
+
+    private static readonly AgentClientSnippet[] AgentClients =
+    {
+        new("服务地址（通用）",
+            url => url,
+            "支持 MCP（Streamable HTTP）的客户端只需要这个地址；不懂 MCP 的 Agent 也可以直接对它 POST JSON-RPC。"),
+        new("Claude Code",
+            url => $"claude mcp add --transport http mixcut {url}",
+            "在终端里执行这条命令即可。"),
+        new("Cursor / Cline / Claude Desktop（JSON）",
+            url => "{\n  \"mcpServers\": {\n    \"mixcut\": { \"url\": \"" + url + "\" }\n  }\n}",
+            "合并进对应配置：Cursor 是项目下 .cursor/mcp.json；Cline 在扩展的 MCP 设置里；Claude Desktop 在 设置→连接器。"),
+        new("Codex CLI / 桌面版",
+            url => "[mcp_servers.mixcut]\ncommand = \"npx\"\nargs = [\"-y\", \"mcp-remote\", \"" + url + "\"]",
+            "追加到 ~/.codex/config.toml，CLI 和桌面版共用这份配置（桌面版改完重启 app 生效）。Codex 走 stdio，用 mcp-remote 桥接，需要 Node.js。"),
+        new("WorkBuddy（腾讯）",
+            url => "{\n  \"mcpServers\": {\n    \"mixcut\": { \"url\": \"" + url + "\", \"transport\": \"http\" }\n  }\n}",
+            "在 WorkBuddy 的 MCP 设置（mcp.json 或可视化 MCP 配置界面）里添加。"),
+        new("Gemini CLI",
+            url => "{\n  \"mcpServers\": {\n    \"mixcut\": { \"httpUrl\": \"" + url + "\" }\n  }\n}",
+            "合并进 ~/.gemini/settings.json。"),
+        new("VS Code Copilot",
+            url => "{\n  \"servers\": {\n    \"mixcut\": { \"type\": \"http\", \"url\": \"" + url + "\" }\n  }\n}",
+            "写入项目下 .vscode/mcp.json。"),
+    };
+
+    /// <summary>注册后的验证指令：用户复制给 Agent 执行，能返回项目清单即代表链路通了。</summary>
+    private const string AgentVerifyPrompt =
+        "请调用 mixcut 的 list_projects 工具，列出我的所有项目，每行输出：项目名｜状态｜视频数｜分镜数。";
+
+    private void BuildAgentTab()
+    {
+        AgentEnabledCheck.IsChecked = _settings.AgentServerEnabled;
+        AgentPortBox.Text = _settings.AgentServerPort.ToString();
+        AgentPortBox.IsEnabled = _settings.AgentServerEnabled;
+        AgentVerifyBox.Text = AgentVerifyPrompt;
+
+        foreach (var client in AgentClients)
+        {
+            AgentClientCombo.Items.Add(client.Name);
+        }
+        AgentClientCombo.SelectedIndex = 1;   // 默认 Claude Code（对齐 macOS）
+
+        // 能力清单：从工具目录（权威附件）动态渲染，加工具后自动同步，不手写死清单
+        var tools = Services.Agent.AgentToolCatalog.All;
+        AgentToolsHeader.Text = $"Agent 能调用的功能（{tools.Count} 个）";
+        AgentToolsPanel.Children.Clear();
+        foreach (var tool in tools)
+        {
+            var item = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+            item.Children.Add(new TextBlock
+            {
+                Text = tool.Name,
+                FontSize = 11,
+                FontFamily = new FontFamily("Consolas, Cascadia Mono, monospace"),
+                Foreground = (Brush)new BrushConverter().ConvertFromString("#333")!,
+            });
+            item.Children.Add(new TextBlock
+            {
+                Text = tool.Description,
+                FontSize = 11,
+                Foreground = (Brush)new BrushConverter().ConvertFromString("#888")!,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0),
+            });
+            AgentToolsPanel.Children.Add(item);
+        }
+
+        _agentLoaded = true;
+        RefreshAgentSnippet();
+    }
+
+    private void RefreshAgentSnippet()
+    {
+        if (AgentClientCombo.SelectedIndex < 0)
+        {
+            return;
+        }
+        var client = AgentClients[AgentClientCombo.SelectedIndex];
+        var url = Services.Agent.AgentGateway.EndpointUrl(_settings.AgentServerPort);
+        AgentSnippetBox.Text = client.Snippet(url);
+        AgentClientHint.Text = client.Hint;
+    }
+
+    private void OnAgentEnabledChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_agentLoaded)
+        {
+            return;
+        }
+        _settings.AgentServerEnabled = AgentEnabledCheck.IsChecked == true;
+        AgentPortBox.IsEnabled = _settings.AgentServerEnabled;
+        _agentGateway.RestartFromSettings();
+    }
+
+    private void OnAgentPortKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Enter)
+        {
+            return;
+        }
+        if (int.TryParse(AgentPortBox.Text.Trim(), out var port) && port is > 0 and <= 65535)
+        {
+            _settings.AgentServerPort = port;
+            _agentGateway.RestartFromSettings();
+            RefreshAgentSnippet();
+            Components.ToastService.Show($"Agent 服务已切到端口 {port}", Components.ToastStyle.Success);
+        }
+        else
+        {
+            Components.ToastService.Show("端口需要是 1~65535 的数字", Components.ToastStyle.Warning);
+            AgentPortBox.Text = _settings.AgentServerPort.ToString();
+        }
+    }
+
+    private void OnAgentPortLostFocus(object sender, RoutedEventArgs e)
+    {
+        // 未按回车离开输入框：还原为当前生效值（改端口需回车确认，避免误触）
+        AgentPortBox.Text = _settings.AgentServerPort.ToString();
+    }
+
+    private void OnAgentClientChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_agentLoaded)
+        {
+            RefreshAgentSnippet();
+        }
+    }
+
+    private void OnCopyAgentSnippet(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(AgentSnippetBox.Text);
+            Components.ToastService.Show("已复制注册配置", Components.ToastStyle.Success);
+        }
+        catch (Exception ex)
+        {
+            Components.ToastService.Show("复制失败：剪贴板被其它程序占用，请重试", Components.ToastStyle.Warning);
+            Serilog.Log.Warning(ex, "[Agent] 复制注册片段失败");
+        }
+    }
+
+    private void OnCopyAgentVerify(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(AgentVerifyPrompt);
+            Components.ToastService.Show("已复制验证指令", Components.ToastStyle.Success);
+        }
+        catch (Exception ex)
+        {
+            Components.ToastService.Show("复制失败：剪贴板被其它程序占用，请重试", Components.ToastStyle.Warning);
+            Serilog.Log.Warning(ex, "[Agent] 复制验证指令失败");
+        }
     }
 }

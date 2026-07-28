@@ -38,12 +38,16 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
 public sealed record VocalsSlice(string SourceVideoPath, string SourceVideoHash, double Start, double End);
 
 /// <summary>单分镜导出规格（值类型）。对应 mac DubSegmentSpec。</summary>
-/// <remarks>#15：<see cref="CaptionLines"/> = 逐句字幕（相对分镜起点秒）；空 = 不烧字幕。</remarks>
+/// <remarks>
+/// #15：<see cref="CaptionLines"/> = 逐句字幕（相对分镜起点秒）；空 = 不烧字幕。
+/// issue #23：<see cref="FontRatio"/> = 逐分镜字号比例（来自 <see cref="Segment.SubtitleFontRatio"/>），
+/// null = 未单独设置，烧录时跟随全局 AppSettings.SubtitleFontRatio（存量行为不变）。
+/// </remarks>
 public sealed record DubSegmentSpec(
     string VideoPath, int StartFrame, int EndFrame, double Fps,
     IReadOnlyList<CaptionLine> CaptionLines, bool HasHardSubtitle, string MaskStyleRaw, SubtitleMaskRect MaskRect,
     bool IsVoiceLocked, string? DubAudioPath, int FreezePadFrames, double TrailingSilence,
-    string? BgmAudioPath, VocalsSlice? Vocals = null);
+    string? BgmAudioPath, VocalsSlice? Vocals = null, double? FontRatio = null);
 
 /// <summary>配音导出输入（整条成片）。对应 mac DubExportInput。</summary>
 public sealed record DubExportInput(IReadOnlyList<DubSegmentSpec> Segments, int MaxWidth, int MaxHeight)
@@ -119,7 +123,8 @@ public sealed record DubExportInput(IReadOnlyList<DubSegmentSpec> Segments, int 
                     IsVoiceLocked: false, DubAudioPath: chosen.AudioFilePath,
                     chosen.FreezePadFrames, chosen.TrailingSilence,
                     // BGM 模式：配音段不混原视频分离出的 bgm.wav（整片 BGM 最后统一铺）
-                    useVocalsAudio ? null : BgmPath(video)));
+                    useVocalsAudio ? null : BgmPath(video),
+                    FontRatio: segment.SubtitleFontRatio > 0 ? segment.SubtitleFontRatio : null));
             }
             else
             {

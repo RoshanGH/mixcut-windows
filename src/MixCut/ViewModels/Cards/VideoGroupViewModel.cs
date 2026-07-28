@@ -31,6 +31,18 @@ public sealed partial class VideoGroupViewModel : ObservableObject, IDisposable
     /// <summary>组头显示名：自建分镜组固定「自建分镜」，普通组用视频名。</summary>
     public string DisplayName => IsUserSegmentGroup ? "自建分镜" : VideoName;
 
+    /// <summary>
+    /// 视频编号（issue #23）：与素材导入页徽章、Agent 的 video_no 同一套规则——项目内按导入时间升序 1 起。
+    /// 0 = 不显示（「自建分镜」聚合组由多个载体视频合并而成，不编号）。
+    /// </summary>
+    public int VideoNo { get; set; }
+
+    /// <summary>编号徽章文本。</summary>
+    public string VideoNoText => $"{VideoNo} 号";
+
+    /// <summary>编号徽章可见性（自建分镜组隐藏）。</summary>
+    public bool ShowVideoNo => !IsUserSegmentGroup && VideoNo > 0;
+
     /// <summary>是否显示视频级配音设置条（自建分镜组隐藏 —— 每个自建分镜是独立载体、逐卡各自操作）。</summary>
     public bool ShowDubBar => !IsUserSegmentGroup;
 

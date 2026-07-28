@@ -86,7 +86,9 @@ public partial class ImportView : UserControl, IProjectView
         // 必须从 DB 重新拉，因为 _project 是 stale 实体；阶段 1 内每完成一个视频立即出现卡片，
         // ASR / AI 任务作为「处理中」覆盖层显示在卡片内（对齐 Mac 体验）。
         var videos = _importVM.GetProjectVideos(_project.Id);
-        _rows = videos.Select(v => new VideoRow(v)).ToList();
+        // issue #23：视频编号覆盖项目内全部视频（含不在本页显示的自建分镜载体），此处只展示成片视频。
+        var numbers = _importVM.GetVideoNumbers(_project.Id);
+        _rows = videos.Select(v => new VideoRow(v, numbers.GetValueOrDefault(v.Id))).ToList();
         VideoList.ItemsSource = _rows;
         VideoListHeader.Visibility = _rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         VideoCountText.Text = $"共 {_rows.Count} 个视频";
@@ -598,9 +600,13 @@ public partial class ImportView : UserControl, IProjectView
         public Visibility SegmentTagsVisibility =>
             string.IsNullOrEmpty(SegmentTagsText) ? Visibility.Collapsed : Visibility.Visible;
 
-        public VideoRow(Video video)
+        /// <summary>视频编号徽章文本（issue #23：与 Agent video_no 同一套编号，「1 号视频」即此号）。</summary>
+        public string VideoNoText { get; }
+
+        public VideoRow(Video video, int videoNo = 0)
         {
             Video = video;
+            VideoNoText = $"{videoNo} 号";
             var duration = video.Duration > 0 ? FormatDuration(video.Duration) : "—";
             var resolution = video.Width > 0 ? video.Resolution : "未知";
             MetaText = $"{duration} · {resolution} · {video.Segments.Count} 分镜";

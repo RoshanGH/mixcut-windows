@@ -77,6 +77,14 @@ public class Segment
     public string? MaskRectJson { get; set; }
 
     /// <summary>
+    /// 逐分镜字幕字号比例（相对成片宽度，issue #23 对齐 mac Segment.subtitleFontRatio）。
+    /// ≤0 = 未单独设置，跟随全局 <see cref="MixCut.Utilities.AppSettings.SubtitleFontRatio"/>（存量行为不变）；
+    /// Agent 的 set_subtitle_mode 传 font_ratio 时写入具体值，该分镜从此用自己的字号。
+    /// 消费口径统一走 <see cref="EffectiveSubtitleFontRatio(double)"/>。
+    /// </summary>
+    public double SubtitleFontRatio { get; set; } = -1;
+
+    /// <summary>
     /// 本分镜自己的克隆音色 id（每个分镜单独克隆，配音跟本段原声一致 —— 广告常见"开头带货钩子换人"，
     /// 若整片只取前 6s 克隆会导致后段主播被串成别人/别的性别）。空 = 尚未逐段克隆。
     /// </summary>
@@ -294,6 +302,13 @@ public class Segment
         ReplacedPictureFrameCount = 0;
         PictureShowsReplaced = false;
     }
+
+    /// <summary>
+    /// 该分镜实际生效的字幕字号比例：单独设置过（>0）用自己的，否则跟随全局默认。
+    /// 预览与导出都用它，保证所见即所得。
+    /// </summary>
+    public double EffectiveSubtitleFontRatio(double globalRatio) =>
+        SubtitleFontRatio > 0 ? SubtitleFontSize.Clamp(SubtitleFontRatio) : SubtitleFontSize.Clamp(globalRatio);
 
     /// <summary>起点剪映式时间码（时:分:秒:帧，按 fps 进位）。fps 未知时退化为 分:秒。</summary>
     [NotMapped]

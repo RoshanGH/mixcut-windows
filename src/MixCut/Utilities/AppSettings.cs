@@ -383,6 +383,23 @@ public sealed class AppSettings
     }
 
     /// <summary>
+    /// 启用本机 Agent 服务（issue #23 内嵌 MCP server）。默认开。
+    /// 对齐 macOS UserDefaults["agentServerEnabled"]。
+    /// </summary>
+    public bool AgentServerEnabled
+    {
+        get => Get("agent_server_enabled") != "false";
+        set => Set("agent_server_enabled", value ? null : "false");
+    }
+
+    /// <summary>Agent 服务端口。默认 8787，夹紧 1~65535。对齐 macOS UserDefaults["agentServerPort"]。</summary>
+    public int AgentServerPort
+    {
+        get => int.TryParse(Get("agent_server_port"), out var n) && n is > 0 and <= 65535 ? n : 8787;
+        set => Set("agent_server_port", Math.Clamp(value, 1, 65535).ToString());
+    }
+
+    /// <summary>
     /// 配音克隆「高保真参考」配方标记：记录哪些视频（按 contentHash）的克隆音色是用
     /// 44.1k 立体声参考注册的。v0.7.x 之前用 24k 单声道参考 → 克隆像机器朗读；升级后需
     /// 让这些存量克隆失效重注册（人声分离已缓存，重注册仅几秒）。哈希不在集合里 = 旧配方 = 该重克隆。

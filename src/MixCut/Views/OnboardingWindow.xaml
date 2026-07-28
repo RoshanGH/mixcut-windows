@@ -150,6 +150,42 @@
                            FontSize="11" Foreground="#AAA" Margin="0,12,0,0"
                            HorizontalAlignment="Center" />
             </StackPanel>
+
+            <!-- Step 4 Agent 接入（issue #23） -->
+            <StackPanel x:Name="AgentPage" VerticalAlignment="Center" Visibility="Collapsed">
+                <TextBlock Text="📡" FontSize="50" HorizontalAlignment="Center"
+                           Foreground="#00A8A8" Margin="0,0,0,8" />
+                <TextBlock Text="进阶 · 让 AI Agent 替你操作" FontSize="22" FontWeight="Bold"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="把 Claude Code、Codex 等 AI 助手接进来，一句话完成批量操作"
+                           FontSize="12" Foreground="#888" HorizontalAlignment="Center"
+                           Margin="0,4,0,18" TextAlignment="Center" />
+                <Border Background="#F4F5F7" CornerRadius="12" Padding="18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="🔗" FontSize="14" Foreground="#00A8A8"
+                                       Width="22" VerticalAlignment="Top" />
+                            <TextBlock Text="打开「设置 → Agent」，把注册配置复制进你的 AI 助手"
+                                       FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="💬" FontSize="14" Foreground="#00A8A8"
+                                       Width="22" VerticalAlignment="Top" />
+                            <TextBlock Text="像聊天一样下指令：「把项目一里 1 号视频的 3 到 5 号分镜标签改成痛点，结尾都延 10 帧」"
+                                       FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="#️⃣" FontSize="14" Foreground="#00A8A8"
+                                       Width="22" VerticalAlignment="Top" />
+                            <TextBlock Text="视频编号看卡片上的「N 号」徽章，分镜编号看 # 号，报编号即可、不用说文件名"
+                                       FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <TextBlock Text="🎬 准备好了，开始你的第一个项目吧"
+                           FontSize="11" Foreground="#AAA" Margin="0,12,0,0"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
         </Grid>
 
         <Border Grid.Row="1" Height="1" Background="#E5E5E7" />
@@ -173,6 +209,7 @@
                 <Ellipse x:Name="Dot1" Width="7" Height="7" Margin="3,0" Fill="#D0D0D5" />
                 <Ellipse x:Name="Dot2" Width="7" Height="7" Margin="3,0" Fill="#D0D0D5" />
                 <Ellipse x:Name="Dot3" Width="7" Height="7" Margin="3,0" Fill="#D0D0D5" />
+                <Ellipse x:Name="Dot4" Width="7" Height="7" Margin="3,0" Fill="#D0D0D5" />
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal">

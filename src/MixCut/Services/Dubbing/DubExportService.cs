@@ -121,9 +121,10 @@ public sealed class DubExportService
         // 每句一个 CaptionOverlay(含 [start,end])，图里链式 overlay=...:enable='between(t,起,止)' 逐句依次出现。锁定段不烧。
         if (!spec.IsVoiceLocked && spec.CaptionLines.Count > 0)
         {
-            // 画布宽=遮挡区宽（字幕落在遮挡带内换行，下限 120px 防逐字竖排）；字号=成片宽×全局比例（与 UI 预览同源）。
+            // 画布宽=遮挡区宽（字幕落在遮挡带内换行，下限 120px 防逐字竖排）；
+            // 字号=成片宽×比例：逐分镜设置过（issue #23 Agent font_ratio）优先，否则全局值（与 UI 预览同源）。
             var canvasW = Math.Max(120, maskPixel.Width);
-            var fontSize = (float)SubtitleFontSize.FontSize(outW, _settings.SubtitleFontRatio);
+            var fontSize = (float)SubtitleFontSize.FontSize(outW, spec.FontRatio ?? _settings.SubtitleFontRatio);
             var withBackdrop = mode != SubtitleMaskMode.Solid;
             for (var li = 0; li < spec.CaptionLines.Count; li++)
             {

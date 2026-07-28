@@ -41,6 +41,12 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _errorMessage;
 
+    /// <summary>上一轮生成中失败的策略数（issue #23 Agent 的 generate_schemes 结果需要）。</summary>
+    private int _failedStrategyCount;
+
+    /// <summary>见 <see cref="_failedStrategyCount"/>。</summary>
+    public int LastFailedStrategyCount => _failedStrategyCount;
+
     public SchemeViewModel(
         IDbContextFactory<MixCutDbContext> dbFactory,
         SchemeGenerationService schemeService,
@@ -159,6 +165,7 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
         IsGenerating = true;
         GenerationFraction = -1;   // Step 1（AI 选策略）无子进度 → 不确定进度条
         ErrorMessage = null;
+        _failedStrategyCount = 0;
 
         _context?.Dispose();
         _context = _dbFactory.CreateDbContext();
@@ -234,6 +241,7 @@ public partial class SchemeViewModel : ObservableObject, IDisposable
                 catch (Exception ex)
                 {
                     _logger.LogInformation("策略「{Name}」生成失败: {Message}", sr.Name, ex.Message);
+                    Interlocked.Increment(ref _failedStrategyCount);
                     return (Index: index, Strategy: sr,
                         Compositions: (IReadOnlyList<AICompactComposition>)Array.Empty<AICompactComposition>());
                 }

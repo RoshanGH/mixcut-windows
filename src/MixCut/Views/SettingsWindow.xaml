@@ -179,6 +179,89 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
+
+            <!-- Agent 接入（issue #23：内嵌 MCP server） -->
+            <TabItem Header="Agent">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,14">
+                    <StackPanel>
+                        <!-- 区块 1 · 本机 Agent 接入（MCP） -->
+                        <TextBlock Text="本机 Agent 接入（MCP）" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,10" />
+                        <CheckBox x:Name="AgentEnabledCheck" Content="启用 Agent 服务"
+                                  FontSize="12" Margin="0,0,0,8"
+                                  Checked="OnAgentEnabledChanged" Unchecked="OnAgentEnabledChanged" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="端口" FontSize="12" Foreground="#666"
+                                       VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBox x:Name="AgentPortBox" Width="90" Padding="6,4"
+                                     FontFamily="Consolas, Cascadia Mono, monospace"
+                                     KeyDown="OnAgentPortKeyDown" LostFocus="OnAgentPortLostFocus" />
+                        </StackPanel>
+                        <TextBlock Text="服务只监听 127.0.0.1，仅本机可访问。改端口后回车生效。"
+                                   FontSize="11" Foreground="#888" TextWrapping="Wrap" Margin="0,0,0,18" />
+
+                        <!-- 区块 2 · 注册到 Agent 客户端 -->
+                        <TextBlock Text="注册到 Agent 客户端" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,10" />
+                        <ComboBox x:Name="AgentClientCombo" Padding="6,5" Margin="0,0,0,8"
+                                  SelectionChanged="OnAgentClientChanged" />
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" x:Name="AgentSnippetBox" IsReadOnly="True"
+                                     Padding="8,6" FontSize="11" TextWrapping="Wrap"
+                                     FontFamily="Consolas, Cascadia Mono, monospace"
+                                     Background="#F7F7F8" BorderBrush="#E0E0E2"
+                                     VerticalScrollBarVisibility="Auto" />
+                            <Button Grid.Column="1" Content="复制" Padding="14,5" Margin="8,0,0,0"
+                                    VerticalAlignment="Top"
+                                    Background="White" BorderBrush="#CCC" Click="OnCopyAgentSnippet" />
+                        </Grid>
+                        <TextBlock x:Name="AgentClientHint" FontSize="11" Foreground="#888"
+                                   TextWrapping="Wrap" Margin="0,0,0,18" />
+
+                        <!-- 区块 3 · 注册后验证 -->
+                        <TextBlock Text="注册后验证（把这句话复制给 Agent 执行）" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,10" />
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" x:Name="AgentVerifyBox" IsReadOnly="True"
+                                     Padding="8,6" FontSize="11" TextWrapping="Wrap"
+                                     FontFamily="Consolas, Cascadia Mono, monospace"
+                                     Background="#F7F7F8" BorderBrush="#E0E0E2" />
+                            <Button Grid.Column="1" Content="复制" Padding="14,5" Margin="8,0,0,0"
+                                    VerticalAlignment="Top"
+                                    Background="White" BorderBrush="#CCC" Click="OnCopyAgentVerify" />
+                        </Grid>
+                        <TextBlock Text="预期返回：你的项目清单，与 MixCut 侧边栏一致（含状态、视频数、分镜数）。能列出来即注册成功；若 Agent 说找不到工具或连接失败，确认 MixCut 正在运行、端口一致后重试。"
+                                   FontSize="11" Foreground="#888" TextWrapping="Wrap" Margin="0,0,0,18" />
+
+                        <!-- 区块 4 · 指挥示例（纯展示，无复制按钮） -->
+                        <TextBlock Text="可以这样指挥 Agent（仅示例，按你的实际项目和分镜说）" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,10" />
+                        <TextBlock Text="「把项目一里 1 号视频的 3 到 5 号分镜标签改成痛点，字幕换成纯色遮挡，结尾都延 10 帧」"
+                                   FontSize="12" Foreground="#333" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <TextBlock Text="「把这个文件夹里的 20 条视频导入新项目跑分析，失败的汇总告诉我」"
+                                   FontSize="12" Foreground="#333" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <TextBlock Text="「用 1 号视频的 1、2 号分镜加 2 号视频的 4 号分镜组个方案，导出到桌面」"
+                                   FontSize="12" Foreground="#333" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="视频编号看素材导入页卡片左上角的「N 号」徽章，分镜编号看分镜卡片的 # 号；一句话可以带多个操作，Agent 会自己拆解执行。"
+                                   FontSize="11" Foreground="#888" TextWrapping="Wrap" Margin="0,0,0,18" />
+
+                        <!-- 区块 5 · 能力清单（从工具目录动态渲染） -->
+                        <TextBlock x:Name="AgentToolsHeader" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#444" Margin="0,0,0,10" />
+                        <StackPanel x:Name="AgentToolsPanel" Margin="0,0,0,8" />
+                        <TextBlock Text="以上是 Agent 的全部权限边界：不能拆分分镜、不能做画面替换变体。删除项目需 Agent 二次确认（先返回影响预览）；删除分镜/视频/项目执行后无撤销。"
+                                   FontSize="11" Foreground="#888" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>

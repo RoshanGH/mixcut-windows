@@ -45,6 +45,10 @@
     <Content Include="Resources\Prompts\*.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Agent 接入（issue #23）权威附件：tools/list 响应与 server_instructions 逐字下发，
+         内嵌进程集保证与 macOS 版逐字段一致（不随安装目录被改动）。 -->
+    <EmbeddedResource Include="Resources\Agent\tools_list.json" />
+    <EmbeddedResource Include="Resources\Agent\server_instructions.txt" />
     <!-- 内置二进制（FFmpeg/ffprobe/whisper-cli 及依赖 DLL）：拷贝到输出 bin\ 子目录 -->
     <Content Include="Resources\bin\**\*" Condition="Exists('Resources\bin')">
       <Link>bin\%(RecursiveDir)%(Filename)%(Extension)</Link>

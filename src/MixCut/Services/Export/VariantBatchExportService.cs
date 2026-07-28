@@ -82,7 +82,8 @@ public static class VariantExportInput
                     ep.VideoPath, ep.StartFrame, ep.EndFrame, fps,
                     capLines, seg.HasHardSubtitle, seg.MaskStyleRaw, seg.MaskRect,
                     IsVoiceLocked: false, DubAudioPath: dub.AudioFilePath,
-                    dub.FreezePadFrames, dub.TrailingSilence, BgmPath(video));
+                    dub.FreezePadFrames, dub.TrailingSilence, BgmPath(video),
+                    FontRatio: seg.SubtitleFontRatio > 0 ? seg.SubtitleFontRatio : null);
                 jobs.Add(new VariantExportJob(true, item.FileName, dur, null, 0, 0, 0, spec, video.Width, video.Height));
             }
             else
