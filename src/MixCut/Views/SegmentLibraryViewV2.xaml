@@ -17,7 +17,7 @@
              之前是 474×660：宽多 74、高多 140，全屏下一行放不下几张、一屏看不到一整行，
              用户反馈「全屏还只有 1 列、大片空白」的直接原因。 -->
         <sys:Double x:Key="SegmentCardWidth">400</sys:Double>
-        <sys:Double x:Key="SegmentCardHeight">542</sys:Double>
+        <sys:Double x:Key="SegmentCardHeight">586</sys:Double>
         <!-- 9:16 竖屏画面，宽度对齐 mac 左栏的 200。 -->
         <sys:Double x:Key="SegmentCardThumbWidth">200</sys:Double>
         <sys:Double x:Key="SegmentCardThumbHeight">356</sys:Double>
@@ -120,22 +120,8 @@
                            Foreground="{StaticResource TextTertiaryBrush}"
                            VerticalAlignment="Center" />
 
-                <!-- 字幕字号（全片统一，原先每张卡各放一份，见卡片模板里的说明）。
-                     拖动时所有卡片画面里的示例字幕会同时变化，可与原视频字幕比大小。 -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
-                            Margin="0,0,12,0"
-                            ToolTip="字幕字号全片统一。拖动时卡片画面里的示例字幕会实时变化，可与原视频字幕对比大小。">
-                    <TextBlock Text="字幕字号" FontSize="11" FontWeight="Medium"
-                               Foreground="{StaticResource TextTertiaryBrush}"
-                               VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <Slider Width="110" Height="18" VerticalAlignment="Center"
-                            Minimum="0.030" Maximum="0.085" SmallChange="0.002" LargeChange="0.005"
-                            Value="{Binding Ratio, Source={x:Static vm:SubtitleFontState.Shared}, Mode=TwoWay}" />
-                    <TextBlock FontSize="11" Foreground="{StaticResource TextTertiaryBrush}"
-                               VerticalAlignment="Center" Margin="6,0,0,0" MinWidth="34"
-                               Text="{Binding PercentText, Source={x:Static vm:SubtitleFontState.Shared}}" />
-                </StackPanel>
-
+                <!-- 字幕字号滑块回到每张卡片（issue #23 后续）：字号已改为逐分镜存储
+                    （Segment.SubtitleFontRatio），全局一份的工具栏滑块语义不再成立，已移除。 -->
                 <Button Grid.Column="2" x:Name="ResetButton" Content="✕  重置筛选"
                         Background="{StaticResource BgTertiaryBrush}"
                         Foreground="{StaticResource TextTertiaryBrush}"
@@ -776,13 +762,22 @@
                                                 Foreground="{StaticResource AccentBlueBrush}"
                                                 ToolTip="把本分镜的字幕处理方式与遮挡框复制到同一视频的其它分镜" />
 
-                                        <!-- 字幕字号滑块已移到顶部工具栏。
-                                             它绑的是全局共享的 SubtitleFontState（全片统一一个值），
-                                             却在每张卡里各放一份 —— 一个 WPF Slider 展开约 25 个可视元素
-                                             （Track + 2 个 RepeatButton + Thumb + 2 个 TickBar），
-                                             N 张卡就是 N 份，纯浪费。放工具栏后拖动一次，
-                                             所有卡片画面里的示例字幕仍会同时变化（同一个数据源），
-                                             反而比原来只能看一张卡的效果更直观。 -->
+                                        <!-- 字幕字号（逐分镜，issue #23 后续）：每张卡自己的滑块，只改本分镜
+                                            （Segment.SubtitleFontRatio，拖动实时预览、松手落库）。
+                                             未单独调过的分镜显示当前默认值，一经拖动即钉住自己的字号。 -->
+                                        <StackPanel Margin="0,8,0,0">
+                                            <DockPanel LastChildFill="False" Margin="0,0,0,2">
+                                                <TextBlock DockPanel.Dock="Left" Text="字幕字号" FontSize="{StaticResource FontSizeCaption}" FontWeight="Medium"
+                                                           Foreground="{StaticResource TextTertiaryBrush}" />
+                                                <TextBlock DockPanel.Dock="Right" FontSize="{StaticResource FontSizeCaption}"
+                                                           Foreground="{StaticResource TextTertiaryBrush}"
+                                                           Text="{Binding FontPercentText}" />
+                                            </DockPanel>
+                                            <!-- Min/Max = SubtitleFontSize.MinRatio/MaxRatio (0.030~0.085)，Height=18 对齐 mac mini -->
+                                            <Slider Height="18" Minimum="0.030" Maximum="0.085" SmallChange="0.002" LargeChange="0.005"
+                                                    Value="{Binding FontRatio, Mode=TwoWay}"
+                                                    ToolTip="本分镜的字幕字号（每个分镜独立）。拖动时上方画面里的示例字幕会实时变化，可与原视频字幕对比大小。" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </StackPanel>
 

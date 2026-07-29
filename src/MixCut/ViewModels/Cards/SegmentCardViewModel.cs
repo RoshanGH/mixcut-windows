@@ -313,6 +313,58 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
     /// <summary>逐分镜字号比例（issue #23 Agent 设置）；≤0 = 跟随全局，字号预览层据此渲染。</summary>
     public double SegmentFontRatio => _segment.SubtitleFontRatio;
 
+    /// <summary>
+    /// 卡片字号滑块绑定值（逐分镜）：未单独调过时显示全局默认，一经拖动即写入本分镜自己的
+    /// <see cref="Segment.SubtitleFontRatio"/>（拖动实时预览，松手 400ms 后落库一次，防拖动期间刷库）。
+    /// </summary>
+    public double FontRatio
+    {
+        get => _segment.SubtitleFontRatio > 0
+            ? SubtitleFontSize.Clamp(_segment.SubtitleFontRatio)
+            : SubtitleFontState.Shared.Ratio;
+        set
+        {
+            var clamped = SubtitleFontSize.Clamp(value);
+            if (Math.Abs(FontRatio - clamped) < 0.0001 && _segment.SubtitleFontRatio > 0) return;
+            _segment.SubtitleFontRatio = clamped;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(FontPercentText));
+            OnPropertyChanged(nameof(SegmentFontRatio));   // 画面里的示例字幕实时跟随
+            ScheduleFontRatioCommit();
+        }
+    }
+
+    /// <summary>「6.9%」字号百分比文案。</summary>
+    public string FontPercentText => $"{FontRatio * 100:0.#}%";
+
+    /// <summary>字号落库 debounce：拖动期间只预览，停手 400ms 落一次库。</summary>
+    private CancellationTokenSource? _fontCommitCts;
+
+    private void ScheduleFontRatioCommit()
+    {
+        _fontCommitCts?.Cancel();
+        _fontCommitCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _fontCommitCts = cts;
+        _ = CommitFontRatioAfterDelayAsync(cts.Token);
+    }
+
+    private async Task CommitFontRatioAfterDelayAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(400, token);
+            if (!token.IsCancellationRequested)
+            {
+                _host.CommitFontRatio(this);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 拖动中被下一次调整取代，静默
+        }
+    }
+
     // ============ 命令 ============
 
     [RelayCommand]
@@ -590,6 +642,10 @@ public sealed partial class SegmentCardViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(NeedsMaskEditor));
         OnPropertyChanged(nameof(SubtitlePreviewVisible));
         OnPropertyChanged(nameof(MaskRect));
+        // 逐分镜字号：Agent / 重载后刷新滑块与字号预览
+        OnPropertyChanged(nameof(FontRatio));
+        OnPropertyChanged(nameof(FontPercentText));
+        OnPropertyChanged(nameof(SegmentFontRatio));
         // #12：合成/切换/删除替换画面后刷新「切换画面」胶囊 + 预览图。
         OnPropertyChanged(nameof(HasReplacedPicture));
         OnPropertyChanged(nameof(PictureShowsReplaced));
@@ -626,6 +682,8 @@ public interface ISegmentCardHost
     Task SetSubtitleTreatmentAsync(SegmentCardViewModel card, SubtitleTreatment treatment);
     /// <summary>P3：遮挡框拖拽松手 → 落库一次。</summary>
     void CommitMaskRect(SegmentCardViewModel card);
+    /// <summary>逐分镜字号滑块停手 → 落库一次（并记为新分镜默认值）。</summary>
+    void CommitFontRatio(SegmentCardViewModel card);
     /// <summary>P3：把当前分镜的字幕处理+遮挡框应用到同视频其余分镜。</summary>
     Task ApplyMaskToAllAsync(SegmentCardViewModel card);
     /// <summary>P3：刷新卡片字幕处理绑定（host 持久化后调用）。</summary>

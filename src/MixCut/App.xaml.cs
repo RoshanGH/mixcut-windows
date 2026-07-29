@@ -1030,8 +1030,27 @@ public partial class App : Application
             // 还不存在，若在建表前 AddColumnIfMissing 会撞 "no such table" 静默失败 → 该表建出来后仍缺列 →
             // 之后任何 eager-load SegmentDubs 的查询（LoadSchemes）报 "no such column"，表现为「生成方案失败」。
             // 通用铁律：任何 AddColumnIfMissing(表X,*) 都必须排在 CreateTableIfMissing(表X) 之后。
-            // issue #23 Agent 接入：逐分镜字幕字号比例（-1 = 未单独设置，跟随全局值，存量行为不变）
+            // issue #23 Agent 接入：逐分镜字幕字号比例（-1 = 未单独设置）
             AddColumnIfMissing(db, "Segments", "SubtitleFontRatio", "REAL NOT NULL DEFAULT -1");
+            // 字号逐分镜化收口（对齐 mac）：把所有未单独设置的分镜一次性回填为当前全局字号，
+            // 从此每个分镜的字号都是自己的（卡片滑块只动本分镜）；全局值只剩「新分镜默认值」一个角色。
+            // 幂等：只动 ≤0 的行，新导入分镜若未 stamped 也会在下次启动被补上。
+            try
+            {
+                var preferred = _host.Services.GetRequiredService<AppSettings>().SubtitleFontRatio;
+                var conn = db.Database.GetDbConnection();
+                if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+                using var backfill = conn.CreateCommand();
+                backfill.CommandText = "UPDATE Segments SET SubtitleFontRatio = " +
+                    preferred.ToString("F5", System.Globalization.CultureInfo.InvariantCulture) +
+                    " WHERE SubtitleFontRatio <= 0";
+                var n = backfill.ExecuteNonQuery();
+                if (n > 0) Log.Information("[FontDiag] 逐分镜字号回填 {N} 行 → {Ratio:F4}", n, preferred);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "[FontDiag] 逐分镜字号回填失败（不阻断启动，回退跟随全局）");
+            }
             // #12 分镜头 AI 画面替换：Segment 四个「替换画面」列 + PhysicalShots / ShotVariants 两张新表
             AddColumnIfMissing(db, "Segments", "ReplacedPictureVideoPath", "TEXT");
             AddColumnIfMissing(db, "Segments", "ReplacedPictureThumbnailPath", "TEXT");

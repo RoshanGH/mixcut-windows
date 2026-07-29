@@ -685,6 +685,12 @@ public partial class SegmentLibraryViewModel : ISegmentCardHost
         _ = Dubbing.SetMaskRectAsync(card.Segment.Id, card.MaskRect);
     }
 
+    void ISegmentCardHost.CommitFontRatio(SegmentCardViewModel card)
+    {
+        // 卡片 VM 已把新值写进内存 Segment（拖动实时预览）；这里落库 + 记为新分镜默认值。
+        _ = Dubbing.SetFontRatioAsync(card.Segment.Id, card.Segment.SubtitleFontRatio);
+    }
+
     async Task ISegmentCardHost.ApplyMaskToAllAsync(SegmentCardViewModel card)
     {
         var n = await Dubbing.ApplyMaskToAllAsync(card.Segment.Id);

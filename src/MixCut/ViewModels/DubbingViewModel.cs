@@ -718,6 +718,24 @@ public sealed partial class DubbingViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 逐分镜字幕字号落库（issue #23 后续：卡片滑块停手时调用），并记为「新分镜默认值」偏好
+    /// （对齐 mac SubtitleFontSize.rememberPreferred——之后导入的新素材出生即用户调惯的字号）。
+    /// </summary>
+    public async Task SetFontRatioAsync(Guid segmentId, double ratio, CancellationToken ct = default)
+    {
+        var clamped = SubtitleFontSize.Clamp(ratio);
+        await using (var db = await _dbFactory.CreateDbContextAsync())
+        {
+            var seg = await db.Segments.FirstOrDefaultAsync(s => s.Id == segmentId, ct);
+            if (seg is null) return;
+            seg.SubtitleFontRatio = clamped;
+            await db.SaveChangesAsync(ct);
+        }
+        _settings.SubtitleFontRatio = clamped;
+        Serilog.Log.Information("[FontDiag] 分镜字号落库 seg={Seg} ratio={Ratio:F4}", segmentId, clamped);
+    }
+
+    /// <summary>
     /// 把某分镜的字幕处理（HasHardSubtitle + 样式 + 遮挡框）应用到同视频<b>其余</b>所有分镜。
     /// 返回被影响的分镜数。对应 mac applyMaskToAllSegments。
     /// </summary>
