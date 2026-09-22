@@ -8,7 +8,7 @@
 
 把一堆投放素材丢进去，AI 自动切分镜、排列组合、改写口播、克隆原声、烧录字幕，一键批量出几十条差异化广告。
 
-[![Release](https://img.shields.io/github/v/release/RoshanGH/mixcut-windows?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=6E56CF)](https://github.com/RoshanGH/mixcut-windows/releases)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-%E5%85%8D%E8%B4%B9%E4%B8%8B%E8%BD%BD-0078D4)](https://apps.microsoft.com/detail/9NS8S5SKMMD2)
 [![Platform](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D4?logo=windows)](#-下载)
 [![.NET](https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?logo=dotnet)](#-技术架构)
 [![Stars](https://img.shields.io/github/stars/RoshanGH/mixcut-windows?style=flat&color=E3B341)](https://github.com/RoshanGH/mixcut-windows/stargazers)
@@ -54,15 +54,21 @@
 
 ## 📥 下载
 
-| 渠道 | 链接 | 说明 |
-|------|------|------|
-| **GitHub Releases** | [**下载最新版 →**](https://github.com/RoshanGH/mixcut-windows/releases/latest) | 版本说明与更新日志都在这里 |
-| Gitee（国内镜像） | [Releases](https://gitee.com/jinxiushanhehao/mixcut-windows/releases) | 国内访问更快 |
+**Windows 版已上架 Microsoft Store（微软商店），免费，唯一官方下载渠道。**
 
-下载 `MixCut-Setup-vX.Y.Z-win-x64.exe` → 双击 → 一路下一步 → 完成即用。**无需管理员权限**。
+<a href="https://apps.microsoft.com/detail/9NS8S5SKMMD2"><img src="https://get.microsoft.com/images/zh-cn%20dark.svg" width="240" alt="从 Microsoft Store 获取 MIXCUT" /></a>
 
-> 安装包约 1.8 GB，因为把 FFmpeg、Whisper 语音识别、人声分离模型全都打包进去了 —— 换来的是装完不用配任何环境。
-> 首次启动若被 SmartScreen 拦截，点「更多信息 → 仍要运行」（应用未做代码签名，后续会补）。
+| 方式 | 操作 |
+|------|------|
+| **网页** | 打开 [apps.microsoft.com/detail/9NS8S5SKMMD2](https://apps.microsoft.com/detail/9NS8S5SKMMD2) → 点「获取」/「安装」 |
+| **商店应用内** | 打开 Windows 自带的 **Microsoft Store**，搜索 **MIXCUT**（发布者：孟凡刚） |
+| **直达链接** | 在「运行」（Win + R）里粘贴 `ms-windows-store://pdp/?productid=9NS8S5SKMMD2` |
+
+**商店版的好处**：微软代签名，没有 SmartScreen 拦截；有新版本时商店自动更新，不用再手动下载安装包。
+Whisper 语音识别模型（约 574 MB）不随包附带，在「设置 → 通用」里按需下载一次即可。
+
+> **GitHub / Gitee 的 Releases 已停止提供安装包**，历史版本页已全部下线，请一律从 Microsoft Store 安装。
+> 更新日志见商店页面的「新增功能」。
 
 ---
 
@@ -120,7 +126,7 @@
 
 ## 🚀 快速开始
 
-**1. 安装** —— 从 [Releases](https://github.com/RoshanGH/mixcut-windows/releases/latest) 下载安装包，双击装完即用。
+**1. 安装** —— 从 [Microsoft Store](https://apps.microsoft.com/detail/9NS8S5SKMMD2) 安装（或在商店里搜 **MIXCUT**），装完即用。
 
 **2. 填 API Key** —— 打开「设置 → AI 模型」：
 
@@ -135,7 +141,7 @@
 
 **3. 走一遍流程** —— 新建项目 → 导入视频（自动 AI 分析）→ 分镜素材库查看/微调 → 生成混剪方案 → 导出。
 
-**系统要求**：Windows 10（1809 / 17763 及以上）或 Windows 11，x64。首次使用语音识别时自动下载 Whisper 模型（约 1.5 GB，仅一次，走国内镜像源、支持断点续传）。
+**系统要求**：Windows 10（1809 / 17763 及以上）或 Windows 11，x64。首次使用语音识别前，在「设置 → 通用」点「下载语音模型」下载 Whisper 模型（约 574 MB，仅一次，支持断点续传）。
 
 ---
 
@@ -182,7 +188,6 @@ dotnet build src\MixCut\MixCut.csproj -c Release -nodeReuse:false -p:UseSharedCo
 
 | 症状 | 原因 | 解决 |
 |---|---|---|
-| 「Windows 已保护你的电脑」蓝色弹窗 | SmartScreen 拦截未签名应用 | 点「更多信息 → 仍要运行」，之后不再弹 |
 | 双击没反应 / 一闪而过 | 启动期崩溃 | 查 `%APPDATA%\MixCut\logs\mixcut-*.log`，搜 `[FTL]` / `[ERR]` |
 | 杀软拦截 `whisper-cli.exe` / `ffmpeg.exe` | 未签名 EXE 被误报 | 把 MixCut 安装目录加入白名单 |
 | 语音识别失败、提示 CPU 不支持 | 内置 whisper 需要 AVX2 | Intel < Haswell(2013) / AMD < Excavator(2015) 的老 CPU 跑不了，其它功能仍可用 |
